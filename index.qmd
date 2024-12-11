@@ -1,5 +1,5 @@
 ---
-title: "Coding outline"
+title: "Level-1 and level-2 estimates of the multilevel cosinor model"
 author: "MH Manuel Haqiqatkhah"
 date: 2024-12-10
 date-modified: last-modified
@@ -22,11 +22,27 @@ The approach is to first fit the cosinor model (with the linear transformation) 
 
 # Analysis
 
+The required packages are as follows:
+
+```{r}
+
+library(brms)
+library(psych)
+library(Rfast)
+library(tidyverse)
+library(rlang)
+library(data.table)
+library(circular)
+
+```
+
 ## Fitting the cosinor model
 
 We make a new dataframe `d` by first filtering the data to only include `hap` scores, then change the name of the time variable (clock hour in day) to `t`, and add `co` ($\cos(\frac{2\pi}{24}t)$) and `si` ($\sin(\frac{2\pi}{24}t)$) as predictors:
 
 ```{r}
+#| label:read-data
+
 d <- d_l %>%
   filter(item == "hap") %>%
   mutate(t = hour_in_day,
@@ -76,11 +92,7 @@ saveRDS(m_hap_random_var,
 ```
 
 And extract person-specific samples (per individual `id` $i$ and sample `iteration` sample $s$) of random effects: `mesor` (i.e., $M_i^s$ from `Intercept)`, `co` (i.e, ${\beta_c}_i^s$), and `si` (i.e., ${\beta_s}_i^s$).
-For the second model, we also extract `sigma2` (i.e., ${\sigma_i^s}^2$ from `sigmaIntercept^2`, and also make `log_sigma2` (by taking the log of `sigma2`).[^1]
-
-[^1]: I have been under the impression that `sigmaIntercept` (initially stored in `r_id__sigma[1,Intercept]`) were $\ln(\sigma_i^s)$; but looking at the estimates, they appear to be the residual variance of samples (i.e., ${\sigma_i^s}^2$,).
-    So now I store them as `sigma2`, and make another variable `log_sigma2 = log(sigma2)` to have something perhaps comparable to Mplus.
-    To revert back to my initial impression, uncomment the respective lines in the `mutate` function at the end.
+For the second model, we also extract `sigmaIntercept` (i.e., $\ln(\sigma_i^s)$, initially stored in `r_id__sigma[.,Intercept]`, also store it in `log_sigma`) and `sigma2` (i.e., ${\sigma_i^s}^2$ from `exp(sigmaIntercept)^2`.
 
 So for each individual `id` $i$ and sample `iteration` sample $s$, we calculate the correct `phi` ($\phi_i^s = \text{atan2}({\beta_s}_i^s, {\beta_c}_i^s)$) and incorrect `phi_atan` ($\phi_i^s = \text{atan}({\beta_s}_i^s/{\beta_c}_i^s)$) and the corresponding peak shifts $\psi_i^s = \frac{24}{2\pi} \phi_i^s$.
 We further add `phi.begins6` ($[\phi_i^s - \pi/2] \text{ mod } 2\pi$) and `phi.begins12` ($[\phi_i^s - \pi] \text{ mod } 2\pi$) as well, which are the correctly calculated $\phi_i^s$, but assuming the day starts at 6:00 and 12:00, respectively.
@@ -88,6 +100,7 @@ We further add `phi.begins6` ($[\phi_i^s - \pi/2] \text{ mod } 2\pi$) and `phi.b
 From now on, we move on with the estimates of the second model; for the first model, remove `sigma`... lines in the code below.
 
 ```{r}
+#| label: extract-samples
 
 # Selecting the second model from now on
 m_hap <- m_hap_random_var
@@ -123,10 +136,8 @@ d_draws <- as_draws_df(m_hap) %>%
   mutate(
     ## Not sure if sigmaIntercept is on log scale or not
     ## Commenting it out now
-    # log_sigma2 = sigmaIntercept,
-    # sigma2 = exp(sigmaIntercept)^2,
-    sigma2 = sigmaIntercept^2,
-    log_sigma2 = log(sigma2),
+    log_sigma = sigmaIntercept,
+    sigma2 = exp(sigmaIntercept)^2,
     mesor = Intercept,
     amp = sqrt(si^2 + co^2),
     phi = atan2(si, co) %% (2*pi),
@@ -135,21 +146,17 @@ d_draws <- as_draws_df(m_hap) %>%
     psi_atan = phi_atan*24/(2*pi)
     ) %>%
   mutate(phi.begins6 = (phi - pi/2) %% (2*pi),
-         phi.begins12 = (phi - pi) %% (2*pi)) %>%
-  filter(id <=10, iteration <= 20)
+         phi.begins12 = (phi - pi) %% (2*pi))
 ```
 
 ## Extracting estimates
 
 ### Level-1 estimates
 
-To get person-specific summary statistics, we do calculations across iterations (i.e., only `group_by(id) %>% summarize(...)`) to get mean, median, and 95%CI width of our estimated parameters ... , and for , once incorrectly (using linear methods) and once correctly (using circular methods).
+To get person-specific summary statistics, we do calculations across iterations (i.e., only `group_by(id) %>% summarize(...)`) to get mean, median, and 95%CI width of our estimated linear parameters, and for the circular parameters (`phi`, `phi.begins6`, `phi.begins12`), once incorrectly (using linear methods) and once correctly (using circular methods).
 
 ```{r}
-
-library(dplyr)
-library(purrr)
-library(circular)
+#| label: extract-level1-estimates
 
 # Helper function for linear stats
 compute_linear_stats <- function(data, variable) {
@@ -184,22 +191,26 @@ ests_level1 <- d_draws %>%
       compute_linear_stats(cur_data(), "co"),
       compute_linear_stats(cur_data(), "amp"),
       compute_linear_stats(cur_data(), "sigma2"),
-      compute_linear_stats(cur_data(), "log_sigma2"),
+      compute_linear_stats(cur_data(), "log_sigma"),
       compute_linear_stats(cur_data(), "phi"),
       compute_linear_stats(cur_data(), "phi.begins6"),
       compute_linear_stats(cur_data(), "phi.begins12"),
-      
+
       # Circular calculations
       compute_circular_stats(cur_data(), "phi"),
       compute_circular_stats(cur_data(), "phi.begins6"),
       compute_circular_stats(cur_data(), "phi.begins12")
     )
   )
+
+saveRDS(ests_level1, "ests_level1_hap_random_var.rds")
+
 ```
 
 To speed up, we can use `data.table` (and parallelization) with different definitions for `compute_` functions, and of course data.table operations (note that on Windows, you should set `mc.cores = 1`, meaning no parallelization with this code):
 
 ```{r}
+#| label: extract-level1-estimates-datatable
 
 # Load data.table library
 library(data.table)
@@ -233,7 +244,7 @@ compute_stats <- function(dt) {
   dt[, {
     # Linear variables
     linear_stats <- unlist(lapply(
-      c("mesor", "si", "co", "amp", "sigma2", "log_sigma2", "phi", "phi.begins6", "phi.begins12"),
+      c("mesor", "si", "co", "amp", "sigma2", "log_sigma", "phi", "phi.begins6", "phi.begins12"),
       function(var) compute_linear_stats(.SD, var)
     ), recursive = FALSE)
     
@@ -255,7 +266,7 @@ d_draws_dt <- as.data.table(d_draws)
 data_split <- split(d_draws_dt, by = "id")
 
 # Apply calculations in parallel
-ests_level1 <- rbindlist(mclapply(data_split, compute_stats, mc.cores = detectCores() - 1))
+ests_level1_dt <- rbindlist(mclapply(data_split, compute_stats, mc.cores = detectCores() - 1))
 ```
 
 ### Level-2 estimates
@@ -263,6 +274,7 @@ ests_level1 <- rbindlist(mclapply(data_split, compute_stats, mc.cores = detectCo
 Importantly, we want to estimate linear and correlations between mesor, amplitude, and residual variance across individuals for each sample:
 
 ```{r}
+#| label: extract-level2-estimates
 
 # Create correlation function with linear and circular methods
 compute_correlations <- function(x, y) {
@@ -289,7 +301,7 @@ cors_lin_angle <- d_draws %>%
   group_by(iteration) %>%
   summarise(
     crossing(
-      linear_variable = c('mesor', 'log_sigma2', 'sigma2', 'amp'),
+      linear_variable = c('mesor', 'log_sigma', 'sigma2', 'amp'),
       circular_variable = c('phi', 'phi.begins6', 'phi.begins12')
     ) %>%
       mutate(corr_data = map2(
@@ -304,41 +316,48 @@ cors_lin_angle <- d_draws %>%
   ) %>%
   unnest(cols = last_col()) %>%
   pivot_longer(lin_cor:circ_pval,
-               names_to = "what",
-               values_to = "value") 
+               names_to = "cortypeXmeasure",
+               values_to = "value")
 
 cors_lin_lin <- d_draws %>%
-    group_by(iteration) %>%
-    summarise(
-        pair_data = list(
-            tibble(
-                par1 = c("mesor", "mesor", "mesor", "amp", "amp"),
-                par2 = c("amp", "log_sigma2", "sigma2", "log_sigma2", "sigma2")
-            )
-        )
-    ) %>%
-    unnest(pair_data) %>%
-    mutate(
-        x = map(par1, ~ pull(filter(d_draws, iteration == cur_group_id()), all_of(.))),
-        y = map(par2, ~ pull(filter(d_draws, iteration == cur_group_id()), all_of(.))),
-        lin_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs")),
-        lin_pval = map2_dbl(x, y, ~ cor.test(.x, .y)$p.value)
-    ) %>%
-    select(-x, -y) %>%
-    unnest(cols = last_col()) %>%
-    pivot_longer(lin_cor:lin_pval,
-                 names_to = "what",
-                 values_to = "value")
-
+  group_by(iteration) %>%
+  summarise(
+    pair_data = list(
+      tibble(
+        par1 = c("mesor", "mesor", "mesor", "amp", "amp"),
+        par2 = c("amp", "log_sigma", "sigma2", "log_sigma", "sigma2")
+      )
+    )
+  ) %>%
+  unnest(pair_data) %>%
+  mutate(
+    x = map(par1, ~ pull(filter(d_draws, iteration == cur_group_id()), all_of(.))),
+    y = map(par2, ~ pull(filter(d_draws, iteration == cur_group_id()), all_of(.))),
+    lin_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs")),
+    lin_pval = map2_dbl(x, y, ~ cor.test(.x, .y)$p.value)
+  ) %>%
+  select(-x, -y) %>%
+  unnest(cols = last_col()) %>%
+  pivot_longer(lin_cor:lin_pval,
+               names_to = "cortypeXmeasure",
+               values_to = "value")
 
 ests_level2 <- cors_lin_angle %>%
-    rbind(cors_lin_lin) %>%
-    group_by(what) %>% 
-    mutate(
-        correlation_type = str_split(what, "_")[[1]][1],
-        measure = str_split(what, "_")[[1]][2],
-        .before = value
-    ) %>% 
-  ungroup() %>% 
-  select(-what)
+  rbind(cors_lin_lin) %>%
+  rename(cortypeXmeasure = what) %>%
+  group_by(cortypeXmeasure) %>%
+  mutate(
+    correlation_type = str_split(cortypeXmeasure, "_")[[1]][1],
+    measure = str_split(cortypeXmeasure, "_")[[1]][2],
+    .before = value
+  ) %>%
+  ungroup() %>%
+  mutate(what = paste(par1, correlation_type, par2, sep = "_"),
+         .after = correlation_type) %>%
+  select(-cortypeXmeasure)
+
+saveRDS(ests_level2, "ests_level2_hap_random_var.rds")
+
 ```
+
+# Results
