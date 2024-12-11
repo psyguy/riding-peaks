@@ -1,0 +1,344 @@
+---
+title: "Coding outline"
+author: "MH Manuel Haqiqatkhah"
+date: 2024-12-10
+date-modified: last-modified
+date-format: "YYYY-MM-DD"
+format: html
+execute:
+  eval: false
+  echo: true
+editor: visual
+---
+
+# Intro
+
+In this repository, I will fit explore multilevel modeling of the cosinor model, starting with single-component cosinor model on ESM data from Leuven Wave 1 dataset.
+
+The raw data is located in the `data` folder, and the long version of it is saved in `./data/d_leuven_long.rsd`.
+This dataframe contains variables `id` (between 1 and 202), `wave` (only 1), `beep_num` (number of beep throughout study, from 1 to 70), `hour_in_day` (clock hour in base-10, between 0 and 24), `beep_in_day` (beep number of the measurement day, from 1 to 10), `t` (date + time), `Date_Local` (dd-mm-yy), `Time_Local` (clock hour in h:m:s), `item` (12 items: `pa`, `na`, `ang`, `cheer`, `conf`, `dep`, `fear`, `hap`, `lone`, `rlx`, `sad`, `str`), `y` (measured value, from 0 to 100), and `time_in_hours` (decimal time since start of the data collection).
+
+The approach is to first fit the cosinor model (with the linear transformation) to the happiness time series using `brms`, then do our stuff (that follows).
+
+# Analysis
+
+## Fitting the cosinor model
+
+We make a new dataframe `d` by first filtering the data to only include `hap` scores, then change the name of the time variable (clock hour in day) to `t`, and add `co` ($\cos(\frac{2\pi}{24}t)$) and `si` ($\sin(\frac{2\pi}{24}t)$) as predictors:
+
+```{r}
+d <- d_l %>%
+  filter(item == "hap") %>%
+  mutate(t = hour_in_day,
+         co = cos(2*pi/24 * t),
+         si = sin(2*pi/24 * t)) %>%
+  select(id, t, y, co, si)
+```
+
+Then we fit two versions of the cosinor model: One with residual variance estimated as fixed effects (i.e., everyone getting the same $\sigma^2$):
+
+```{r}
+#| label: brms-fixed-residual-variance
+
+m_hap_fixed_var <- brm(
+  y ~ 1 + co + si | id,
+  data = d,
+  backend = "cmdstanr",
+  chains = 4,
+  iter = 3000,
+  threads = threading(2),
+  cores = 8)
+
+saveRDS(m_hap_fixed_var,
+        here::here("fits",
+                   "brms_hap_fixed_var.rds"))
+```
+
+And one with random residual variance:
+
+```{r}
+#| label: brms-random-residual-variance
+
+m_hap_random_var <- brm(
+  brmsformula(
+    y ~ 1 + co + si | id,
+    sigma ~ 1 | id),
+  data = d,
+  backend = "cmdstanr",
+  chains = 4,
+  iter = 3000,
+  threads = threading(2),
+  cores = 8)
+
+saveRDS(m_hap_random_var,
+        here::here("fits",
+                   "brms_hap_random_var.rds"))
+```
+
+And extract person-specific samples (per individual `id` $i$ and sample `iteration` sample $s$) of random effects: `mesor` (i.e., $M_i^s$ from `Intercept)`, `co` (i.e, ${\beta_c}_i^s$), and `si` (i.e., ${\beta_s}_i^s$).
+For the second model, we also extract `sigma2` (i.e., ${\sigma_i^s}^2$ from `sigmaIntercept^2`, and also make `log_sigma2` (by taking the log of `sigma2`).[^1]
+
+[^1]: I have been under the impression that `sigmaIntercept` (initially stored in `r_id__sigma[1,Intercept]`) were $\ln(\sigma_i^s)$; but looking at the estimates, they appear to be the residual variance of samples (i.e., ${\sigma_i^s}^2$,).
+    So now I store them as `sigma2`, and make another variable `log_sigma2 = log(sigma2)` to have something perhaps comparable to Mplus.
+    To revert back to my initial impression, uncomment the respective lines in the `mutate` function at the end.
+
+So for each individual `id` $i$ and sample `iteration` sample $s$, we calculate the correct `phi` ($\phi_i^s = \text{atan2}({\beta_s}_i^s, {\beta_c}_i^s)$) and incorrect `phi_atan` ($\phi_i^s = \text{atan}({\beta_s}_i^s/{\beta_c}_i^s)$) and the corresponding peak shifts $\psi_i^s = \frac{24}{2\pi} \phi_i^s$.
+We further add `phi.begins6` ($[\phi_i^s - \pi/2] \text{ mod } 2\pi$) and `phi.begins12` ($[\phi_i^s - \pi] \text{ mod } 2\pi$) as well, which are the correctly calculated $\phi_i^s$, but assuming the day starts at 6:00 and 12:00, respectively.
+
+From now on, we move on with the estimates of the second model; for the first model, remove `sigma`... lines in the code below.
+
+```{r}
+
+# Selecting the second model from now on
+m_hap <- m_hap_random_var
+
+# Taking out the individual-specific sampled parameter estimates
+d_draws <- as_draws_df(m_hap) %>%
+  select(contains("r_id[") | contains("r_id__sigma[")) %>%
+  mutate(iteration = 1:n()) %>%
+  pivot_longer(
+    cols = starts_with("r_id"),
+    names_to = "id_x_variable",
+    values_to = "value"
+  ) %>%
+  # Extract id (number between [ and ,)
+  mutate(
+    id_x_variable =
+      str_replace(id_x_variable,
+                  "r_id__sigma\\[(\\d+),Intercept\\]",
+                  "r_id__sigma[\\1,sigmaIntercept]"),
+    id = str_extract(id_x_variable,
+                     "(?<=\\[)[0-9]+(?=,)") %>%
+         as.numeric(),
+    # Extract parameter (characters between , and ])
+    parameter = str_extract(id_x_variable,
+                            "(?<=,)[^\\]]+(?=\\])"),
+    # Clean up parameter by removing whitespace
+    parameter = str_trim(parameter)
+  ) %>%
+  # Remove original variable column and reorder
+  select(iteration, id, parameter, value) %>%
+  pivot_wider(names_from = "parameter",
+              values_from = "value") %>%
+  mutate(
+    ## Not sure if sigmaIntercept is on log scale or not
+    ## Commenting it out now
+    # log_sigma2 = sigmaIntercept,
+    # sigma2 = exp(sigmaIntercept)^2,
+    sigma2 = sigmaIntercept^2,
+    log_sigma2 = log(sigma2),
+    mesor = Intercept,
+    amp = sqrt(si^2 + co^2),
+    phi = atan2(si, co) %% (2*pi),
+    phi_atan = atan(si/co) %% (2*pi),
+    psi = phi*24/(2*pi),
+    psi_atan = phi_atan*24/(2*pi)
+    ) %>%
+  mutate(phi.begins6 = (phi - pi/2) %% (2*pi),
+         phi.begins12 = (phi - pi) %% (2*pi)) %>%
+  filter(id <=10, iteration <= 20)
+```
+
+## Extracting estimates
+
+### Level-1 estimates
+
+To get person-specific summary statistics, we do calculations across iterations (i.e., only `group_by(id) %>% summarize(...)`) to get mean, median, and 95%CI width of our estimated parameters ... , and for , once incorrectly (using linear methods) and once correctly (using circular methods).
+
+```{r}
+
+library(dplyr)
+library(purrr)
+library(circular)
+
+# Helper function for linear stats
+compute_linear_stats <- function(data, variable) {
+  tibble(
+    mean = mean(data[[variable]], na.rm = TRUE),
+    median = median(data[[variable]], na.rm = TRUE),
+    ci_width = quantile(data[[variable]], 0.975, na.rm = TRUE) - quantile(data[[variable]], 0.025, na.rm = TRUE)
+  ) %>%
+    rename_with(~ paste0(variable, "_", .))
+}
+
+# Helper function for circular stats
+compute_circular_stats <- function(data, variable) {
+  tibble(
+    circ_mean = (mean.circular(data[[variable]]) %% (2 * pi)) %>% as.numeric(),
+    circ_median = (median.circular(data[[variable]]) %% (2 * pi)) %>% as.numeric(),
+    circ_ci_width = (
+      (quantile.circular(data[[variable]], 0.975) - quantile.circular(data[[variable]], 0.025)) %% (2 * pi)
+    ) %>% as.numeric()
+  ) %>%
+    rename_with(~ paste0(variable, "_", .))
+}
+
+# Apply calculations for all variables
+ests_level1 <- d_draws %>%
+  group_by(id) %>%
+  summarise(
+    bind_cols(
+      # Linear calculations
+      compute_linear_stats(cur_data(), "mesor"),
+      compute_linear_stats(cur_data(), "si"),
+      compute_linear_stats(cur_data(), "co"),
+      compute_linear_stats(cur_data(), "amp"),
+      compute_linear_stats(cur_data(), "sigma2"),
+      compute_linear_stats(cur_data(), "log_sigma2"),
+      compute_linear_stats(cur_data(), "phi"),
+      compute_linear_stats(cur_data(), "phi.begins6"),
+      compute_linear_stats(cur_data(), "phi.begins12"),
+      
+      # Circular calculations
+      compute_circular_stats(cur_data(), "phi"),
+      compute_circular_stats(cur_data(), "phi.begins6"),
+      compute_circular_stats(cur_data(), "phi.begins12")
+    )
+  )
+```
+
+To speed up, we can use `data.table` (and parallelization) with different definitions for `compute_` functions, and of course data.table operations (note that on Windows, you should set `mc.cores = 1`, meaning no parallelization with this code):
+
+```{r}
+
+# Load data.table library
+library(data.table)
+
+# Helper function for linear stats
+compute_linear_stats <- function(data, variable) {
+    setNames(
+        list(
+            mean(data[[variable]], na.rm = TRUE),
+            median(data[[variable]], na.rm = TRUE),
+            quantile(data[[variable]], 0.975, na.rm = TRUE) - quantile(data[[variable]], 0.025, na.rm = TRUE)
+        ),
+        paste0(variable, c("_mean", "_median", "_ci_width"))
+    )
+}
+
+# Helper function for circular stats
+compute_circular_stats <- function(data, variable) {
+    setNames(
+        list(
+            (mean.circular(data[[variable]]) %% (2 * pi)) %>% as.numeric(),
+            (median.circular(data[[variable]]) %% (2 * pi)) %>% as.numeric(),
+            ((quantile.circular(data[[variable]], 0.975) - quantile.circular(data[[variable]], 0.025)) %% (2 * pi)) %>% as.numeric()
+        ),
+        paste0(variable, c("_circ_mean", "_circ_median", "_circ_ci_width"))
+    )
+}
+
+# Function to compute stats for one group (one id)
+compute_stats <- function(dt) {
+  dt[, {
+    # Linear variables
+    linear_stats <- unlist(lapply(
+      c("mesor", "si", "co", "amp", "sigma2", "log_sigma2", "phi", "phi.begins6", "phi.begins12"),
+      function(var) compute_linear_stats(.SD, var)
+    ), recursive = FALSE)
+    
+    # Circular variables
+    circular_stats <- unlist(lapply(
+      c("phi", "phi.begins6", "phi.begins12"),
+      function(var) compute_circular_stats(.SD, var)
+    ), recursive = FALSE)
+    
+    # Combine stats
+    c(linear_stats, circular_stats)
+  }, by = id]
+}
+
+# Convert to data.table
+d_draws_dt <- as.data.table(d_draws)
+
+# Split data by id for parallel processing
+data_split <- split(d_draws_dt, by = "id")
+
+# Apply calculations in parallel
+ests_level1 <- rbindlist(mclapply(data_split, compute_stats, mc.cores = detectCores() - 1))
+```
+
+### Level-2 estimates
+
+Importantly, we want to estimate linear and correlations between mesor, amplitude, and residual variance across individuals for each sample:
+
+```{r}
+
+# Create correlation function with linear and circular methods
+compute_correlations <- function(x, y) {
+  tibble(
+    # Linear correlations
+    lin_cor = cor(x, y),
+    lin_pval = cor.test(x, y)$p.value,
+    # Circular correlations (if circlin.cor function exists)
+    circ_cor = tryCatch(
+      circlin.cor(x, y)[1],
+      error = function(e)
+        NA_real_
+    ),
+    circ_pval = tryCatch(
+      circlin.cor(x, y)[2],
+      error = function(e)
+        NA_real_
+    )
+  )
+}
+
+# Compute correlations for all combinations
+cors_lin_angle <- d_draws %>%
+  group_by(iteration) %>%
+  summarise(
+    crossing(
+      linear_variable = c('mesor', 'log_sigma2', 'sigma2', 'amp'),
+      circular_variable = c('phi', 'phi.begins6', 'phi.begins12')
+    ) %>%
+      mutate(corr_data = map2(
+        .x = syms(circular_variable),
+        .y = syms(linear_variable),
+        .f = ~ compute_correlations(eval_tidy(.x, data = cur_data()),
+                                    eval_tidy(.y, data = cur_data()))
+      )) %>%
+      unnest(corr_data) %>%
+      rename(par2 = circular_variable,
+             par1 = linear_variable)
+  ) %>%
+  unnest(cols = last_col()) %>%
+  pivot_longer(lin_cor:circ_pval,
+               names_to = "what",
+               values_to = "value") 
+
+cors_lin_lin <- d_draws %>%
+    group_by(iteration) %>%
+    summarise(
+        pair_data = list(
+            tibble(
+                par1 = c("mesor", "mesor", "mesor", "amp", "amp"),
+                par2 = c("amp", "log_sigma2", "sigma2", "log_sigma2", "sigma2")
+            )
+        )
+    ) %>%
+    unnest(pair_data) %>%
+    mutate(
+        x = map(par1, ~ pull(filter(d_draws, iteration == cur_group_id()), all_of(.))),
+        y = map(par2, ~ pull(filter(d_draws, iteration == cur_group_id()), all_of(.))),
+        lin_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs")),
+        lin_pval = map2_dbl(x, y, ~ cor.test(.x, .y)$p.value)
+    ) %>%
+    select(-x, -y) %>%
+    unnest(cols = last_col()) %>%
+    pivot_longer(lin_cor:lin_pval,
+                 names_to = "what",
+                 values_to = "value")
+
+
+ests_level2 <- cors_lin_angle %>%
+    rbind(cors_lin_lin) %>%
+    group_by(what) %>% 
+    mutate(
+        correlation_type = str_split(what, "_")[[1]][1],
+        measure = str_split(what, "_")[[1]][2],
+        .before = value
+    ) %>% 
+  ungroup() %>% 
+  select(-what)
+```
