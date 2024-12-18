@@ -40,7 +40,7 @@ library(circular)
 
 ## Fitting the cosinor model
 
-We make a new dataframe `d` by first filtering the data to only scores from one item denoted by `item_`; we concider `hap`, `sad`, `pa`, and `na` for `item_`, starting by `item_ <- "hap"`. We then change the name of the time variable (clock hour in day) to `t`, and add `co` ($\cos(\frac{2\pi}{24}t)$) and `si` ($\sin(\frac{2\pi}{24}t)$) as predictors:
+We make a new dataframe `d` by first filtering the data to only scores from one item denoted by `item_`; we consider `hap`, `sad`, `pa`, and `na` for `item_`, starting by `item_ <- "hap"`. We then change the name of the time variable (clock hour in day) to `t`, and add `co` ($\cos(\frac{2\pi}{24}t)$) and `si` ($\sin(\frac{2\pi}{24}t)$) as predictors:
 
 ```{r}
 #| label:read-data

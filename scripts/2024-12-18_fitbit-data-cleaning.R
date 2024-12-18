@@ -18,17 +18,23 @@ d_fitbit <- d_fitbit_raw %>%
          t = hour,
          y = bpm) %>%
   # Selecting three weeks of data
-  filter(date >= "2021-07-01",
-         date <= "2021-07-21") %>%
+  filter(date >= "2021-12-01",
+         date <= "2021-12-31") %>%
+  na.omit() %>%
   # Selecting 40 users that have exactly 24*21 measurements
-  filter(!(id %in% c("621e2ef567b776a24099f889",
-                   "621e323667b776a240f19134",
-                   "621e2f9167b776a240011ccb",
-                   "621e2f1b67b776a240b3d87c",
-                   "621e301e67b776a240608a72"))) %>%
+  # filter(!(id %in% c("621e2ef567b776a24099f889",
+  #                  "621e323667b776a240f19134",
+  #                  "621e2f9167b776a240011ccb",
+  #                  "621e2f1b67b776a240b3d87c",
+  #                  "621e301e67b776a240608a72"))) %>%
   mutate(co = cos(2*pi/24 * t),
          si = sin(2*pi/24 * t),
          co2 = cos(4*pi/24 * t),
          si2 = sin(4*pi/24 * t))
 
+d <- d_fitbit %>%
+  select(id, t, y, co, si) %>%
+  mutate(id = as.integer(factor(id)))
+
+item_ <- "fitbit"
 
