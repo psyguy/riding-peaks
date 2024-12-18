@@ -30,6 +30,7 @@ library(brms)
 library(psych)
 library(Rfast)
 library(tidyverse)
+library(ggh4x)
 library(rlang)
 library(data.table)
 library(circular)
@@ -38,13 +39,17 @@ library(circular)
 
 ## Fitting the cosinor model
 
-We make a new dataframe `d` by first filtering the data to only include `hap` scores, then change the name of the time variable (clock hour in day) to `t`, and add `co` ($\cos(\frac{2\pi}{24}t)$) and `si` ($\sin(\frac{2\pi}{24}t)$) as predictors:
+We make a new dataframe `d` by first filtering the data to only scores from one item denoted by `item_`;
+we concider `hap`, `sad`, `pa`, and `na` for `item_`, starting by `item_ <- "hap"`.
+We then change the name of the time variable (clock hour in day) to `t`, and add `co` ($\cos(\frac{2\pi}{24}t)$) and `si` ($\sin(\frac{2\pi}{24}t)$) as predictors:
 
 ```{r}
 #| label:read-data
 
+item_ <- "hap"
+
 d <- d_l %>%
-  filter(item == "hap") %>%
+  filter(item == item_) %>%
   mutate(t = hour_in_day,
          co = cos(2*pi/24 * t),
          si = sin(2*pi/24 * t)) %>%
@@ -56,7 +61,7 @@ Then we fit two versions of the cosinor model: One with residual variance estima
 ```{r}
 #| label: brms-fixed-residual-variance
 
-m_hap_fixed_var <- brm(
+m_fixed_var <- brm(
   y ~ 1 + co + si | id,
   data = d,
   backend = "cmdstanr",
@@ -65,9 +70,13 @@ m_hap_fixed_var <- brm(
   threads = threading(2),
   cores = 8)
 
-saveRDS(m_hap_fixed_var,
-        here::here("fits",
-                   "brms_hap_fixed_var.rds"))
+saveRDS(m_fixed_var,
+        here("fits",
+            paste0("brms_",
+                   item_,
+                   "_fixed_var.rds")
+            )
+        )
 ```
 
 And one with random residual variance:
@@ -75,7 +84,7 @@ And one with random residual variance:
 ```{r}
 #| label: brms-random-residual-variance
 
-m_hap_random_var <- brm(
+m_random_var <- brm(
   brmsformula(
     y ~ 1 + co + si | id,
     sigma ~ 1 | id),
@@ -86,9 +95,13 @@ m_hap_random_var <- brm(
   threads = threading(2),
   cores = 8)
 
-saveRDS(m_hap_random_var,
-        here::here("fits",
-                   "brms_hap_random_var.rds"))
+saveRDS(m_random_var,
+        here("fits",
+             paste0("brms_",
+                    item_,
+                    "_random_var.rds")
+             )
+        )
 ```
 
 And extract person-specific samples (per individual `id` $i$ and sample `iteration` sample $s$) of random effects: `mesor` (i.e., $M_i^s$ from `Intercept)`, `co` (i.e, ${\beta_c}_i^s$), and `si` (i.e., ${\beta_s}_i^s$).
@@ -103,10 +116,10 @@ From now on, we move on with the estimates of the second model; for the first mo
 #| label: extract-samples
 
 # Selecting the second model from now on
-m_hap <- m_hap_random_var
+m_fit <- m_random_var
 
 # Taking out the individual-specific sampled parameter estimates
-d_draws <- as_draws_df(m_hap) %>%
+d_draws <- as_draws_df(m_fit) %>%
   select(contains("r_id[") | contains("r_id__sigma[")) %>%
   mutate(iteration = 1:n()) %>%
   pivot_longer(
@@ -203,7 +216,13 @@ ests_level1 <- d_draws %>%
     )
   )
 
-saveRDS(ests_level1, "ests_level1_hap_random_var.rds")
+saveRDS(ests_level1,
+        here("fits",
+             paste0("ests_level1_",
+                    item_,
+                    "_random_var.rds")
+             )
+        )
 
 ```
 
@@ -271,30 +290,96 @@ ests_level1_dt <- rbindlist(mclapply(data_split, compute_stats, mc.cores = detec
 
 ### Level-2 estimates
 
-Importantly, we want to estimate linear and correlations between mesor, amplitude, and residual variance across individuals for each sample:
+Importantly, we want to estimate linear and correlations between mesor, amplitude, and residual variance across individuals for each sample.
+
+To do so, we need to first define a function to calculate Mardia's circular-linear rank correlation:
 
 ```{r}
-#| label: extract-level2-estimates
+
+# Mardia circular-linear rank correlation
+cor_mardia <- function(theta, x) {
+  # Remove NAs
+  valid <- complete.cases(theta, x)
+  theta <- theta[valid]
+  x <- x[valid]
+  n <- length(theta)
+  if (n == 0) stop("No valid data after removing NAs.")
+  
+  # Rank and compute theta star
+  r_theta <- rank(theta, ties.method = "average")
+  r_x <- rank(x, ties.method = "average")
+  r_theta_star <- r_theta * 2 * pi / n
+  
+  # Precompute sine and cosine
+  cos_theta_star <- cos(r_theta_star)
+  sin_theta_star <- sin(r_theta_star)
+  
+  # Compute T_c and T_s
+  T_c <- sum(r_x * cos_theta_star)
+  T_s <- sum(r_x * sin_theta_star)
+  
+  # Calculate coefficient 'a'
+  a <- ifelse(
+    n %% 2 == 0,
+    1 / (1 + 5 / tan(pi / n)^2 + 4 / tan(pi / n)^4),
+    2 * sin(pi / n)^4 / (1 + cos(pi / n))^3
+  )
+  
+  # Final D value (rank correlation, values between 0 and 1)
+  D <- a * (T_c^2 + T_s^2)
+  
+  # Calculate U_n and p-value
+  U_n <- 24 * (T_c^2 + T_s^2) / (n^2 * (n + 1))
+  p.value <- 1 - pchisq(U_n, df = 2)
+  
+  # Return results as a list
+  return(list(estimate = D, p.value = p.value, U_n = U_n))
+}
+```
+
+To make the code cleaner, we use a helper function that, for correlations where $\phi$ is involved, calculates various correlations (Pearson's, Spearman's rank, Kendall's rank, as well as Johnson-Wehrly-Mardia, and Mardia's rank) for us:
+
+```{r}
 
 # Create correlation function with linear and circular methods
 compute_correlations <- function(x, y) {
+  
+  ## x is a circular variable, y is a linear variable
+  cor_mardia <- cor_mardia(x, y)
+  
   tibble(
-    # Linear correlations
-    lin_cor = cor(x, y),
-    lin_pval = cor.test(x, y)$p.value,
-    # Circular correlations (if circlin.cor function exists)
-    circ_cor = tryCatch(
+    ## Linear correlations
+    # Pearson's
+    pearson_cor = cor(x, y),
+    pearson_pval = cor.test(x, y)$p.value,
+    # Spearman's
+    spearman_cor = cor(x, y, method = "spearman"),
+    spearman_pval = cor.test(x, y, method = "spearman")$p.value,# Kendall's tau
+    kendall_cor = cor(x, y, method = "kendall"),
+    kendall_pval = cor.test(x, y, method = "kendall")$p.value,
+    ## Circular correlations
+    # Johnson-Wehrly-Mardia correlation (sinusoidal assumption)
+    jwm_cor = tryCatch(
       circlin.cor(x, y)[1],
       error = function(e)
         NA_real_
     ),
-    circ_pval = tryCatch(
+    jwm_pval = tryCatch(
       circlin.cor(x, y)[2],
       error = function(e)
         NA_real_
-    )
+    ),
+    # Mardia's rank correlation (no assumption)
+    mard_cor = cor_mardia$estimate,
+    mard_pval = cor_mardia$p.value
   )
 }
+```
+
+We then use the functions to do the calculations, make a long dataframe, and save it as an `.RDS` file:
+
+```{r}
+#| label: extract-level2-estimates
 
 # Compute correlations for all combinations
 cors_lin_angle <- d_draws %>%
@@ -315,7 +400,7 @@ cors_lin_angle <- d_draws %>%
              par1 = linear_variable)
   ) %>%
   unnest(cols = last_col()) %>%
-  pivot_longer(lin_cor:circ_pval,
+  pivot_longer(-1:-3,
                names_to = "cortypeXmeasure",
                values_to = "value")
 
@@ -333,18 +418,21 @@ cors_lin_lin <- d_draws %>%
   mutate(
     x = map(par1, ~ pull(filter(d_draws, iteration == cur_group_id()), all_of(.))),
     y = map(par2, ~ pull(filter(d_draws, iteration == cur_group_id()), all_of(.))),
-    lin_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs")),
-    lin_pval = map2_dbl(x, y, ~ cor.test(.x, .y)$p.value)
+    pearson_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs")),
+    pearson_pval = map2_dbl(x, y, ~ cor.test(.x, .y)$p.value),
+    spearman_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs", method = "spearman")),
+    spearman_pval = map2_dbl(x, y, ~ cor.test(.x, .y)$p.value, method = "spearman"),
+    kendall_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs", method = "kendall")),
+    kendall_pval = map2_dbl(x, y, ~ cor.test(.x, .y)$p.value, method = "kendall")
   ) %>%
   select(-x, -y) %>%
   unnest(cols = last_col()) %>%
-  pivot_longer(lin_cor:lin_pval,
+  pivot_longer(-1:-3,
                names_to = "cortypeXmeasure",
                values_to = "value")
 
 ests_level2 <- cors_lin_angle %>%
   rbind(cors_lin_lin) %>%
-  rename(cortypeXmeasure = what) %>%
   group_by(cortypeXmeasure) %>%
   mutate(
     correlation_type = str_split(cortypeXmeasure, "_")[[1]][1],
@@ -356,8 +444,34 @@ ests_level2 <- cors_lin_angle %>%
          .after = correlation_type) %>%
   select(-cortypeXmeasure)
 
-saveRDS(ests_level2, "ests_level2_hap_random_var.rds")
+saveRDS(ests_level2,
+        here("fits",
+             paste0("ests_level2_",
+                    item_,
+                    "_random_var.rds")
+             )
+        )
 
 ```
 
 # Results
+
+Before making the plots, we first read the saved results:
+
+```{r}
+
+ests_level1 <- readRDS(here("fits",
+                            paste0("ests_level1_",
+                                   item_,
+                                   "_random_var.rds"))
+ests_level2 <- readRDS(here("fits",
+                            paste0("ests_level2_",
+                                   item_,
+                                   "_random_var.rds"))
+```
+
+## Level-1 plots
+
+```{r}
+
+```
