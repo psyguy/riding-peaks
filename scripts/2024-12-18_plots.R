@@ -111,8 +111,8 @@ ests_level2 %>%
   filter(!grepl("log", par1)) %>%
   pivot_wider(names_from = measure,
               values_from = value) %>%
-  mutate(abs_cor = abs(cor)) %>%
-  pivot_longer(cor:abs_cor,
+  mutate(cor_abs = abs(cor)) %>%
+  pivot_longer(cor:cor_abs,
                names_to = "measure",
                values_to = "value") %>%
   mutate(
@@ -139,6 +139,7 @@ ests_level2 %>%
         )
       )
   ) %>%
+  # filter(correlation_type %in% c("Pearson (lin-lin)", "Mardia (circ-lin rank)")) %>%
   group_by(correlation_type, par1, measure,variable) %>%
   mutate(mm = median (value)) %>%
   ggplot(aes(x = value, fill = correlation_type)) +
@@ -149,7 +150,7 @@ ests_level2 %>%
                scales = "fixed") +
   geom_vline(aes(xintercept = mm,
                  color = correlation_type)) +
-  labs(title = "Histograms of _mean and _circ_mean for Phi Variables",
+  labs(title = "Histograms circular-linear correlations",
        x = "Value",
        y = "Frequency") +
   scale_fill_manual(values = c("brown1",
