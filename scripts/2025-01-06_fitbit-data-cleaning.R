@@ -41,21 +41,25 @@ d_fitbit_joined <- d_fitbit_raw %>%
          si2 = sin(4*pi/24 * t),
          .after = bpm) %>%
   group_by(id_hashed) %>%
-  mutate(num_measurements = n()) %>%
+  mutate(num_measurements = sum(!is.na(y))) %>%
   filter(num_measurements > 24) %>%
-  ungroup() %>%
+  # Selecting up to 3 weeks of data per person
+  mutate(tmp = paste(id_hashed, date)) %>%
+  slice_min(order_by = tmp,
+            n = 21*24,
+            na_rm = TRUE) %>%
+  select(-tmp) %>%
   mutate(id = as.integer(factor(id_hashed)),
          .before = 1) %>%
-  full_join(d_fitbit_panas,
+  left_join(d_fitbit_panas,
             by = "id_hashed") %>%
-  full_join(d_fitbit_personality,
+  left_join(d_fitbit_personality,
             by = c("id_hashed", "gender"))
 
 d_fitbit <- d_fitbit_joined %>%
   select(id:si2) %>%
   na.omit()
 d_fitbit_cov <- d_fitbit_joined %>%
-  select(age) %>%
   na.omit()
 
 item_ <- "fitbit"
