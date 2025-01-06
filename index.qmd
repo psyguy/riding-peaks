@@ -15,8 +15,7 @@ editor: visual
 
 In this repository, I will fit explore multilevel modeling of the cosinor model, starting with single-component cosinor model on ESM data from Leuven Wave 1 dataset.
 
-The raw data is located in the `data` folder, and the long version of it is saved in `./data/d_leuven_long.rsd`.
-This dataframe contains variables `id` (between 1 and 202), `wave` (only 1), `beep_num` (number of beep throughout study, from 1 to 70), `hour_in_day` (clock hour in base-10, between 0 and 24), `beep_in_day` (beep number of the measurement day, from 1 to 10), `t` (date + time), `Date_Local` (dd-mm-yy), `Time_Local` (clock hour in h:m:s), `item` (12 items: `pa`, `na`, `ang`, `cheer`, `conf`, `dep`, `fear`, `hap`, `lone`, `rlx`, `sad`, `str`), `y` (measured value, from 0 to 100), and `time_in_hours` (decimal time since start of the data collection).
+The raw data is located in the `data` folder, and the long version of it is saved in `./data/d_leuven_long.rsd`. This dataframe contains variables `id` (between 1 and 202), `wave` (only 1), `beep_num` (number of beep throughout study, from 1 to 70), `hour_in_day` (clock hour in base-10, between 0 and 24), `beep_in_day` (beep number of the measurement day, from 1 to 10), `t` (date + time), `Date_Local` (dd-mm-yy), `Time_Local` (clock hour in h:m:s), `item` (12 items: `pa`, `na`, `ang`, `cheer`, `conf`, `dep`, `fear`, `hap`, `lone`, `rlx`, `sad`, `str`), `y` (measured value, from 0 to 100), and `time_in_hours` (decimal time since start of the data collection).
 
 The approach is to first fit the cosinor model (with the linear transformation) to the happiness time series using `brms`, then do our stuff (that follows).
 
@@ -41,11 +40,10 @@ library(circular)
 
 ## Fitting the cosinor model
 
-We make a new dataframe `d` by first filtering the data to only scores from one item denoted by `item_`; we consider `hap`, `sad`, `pa`, and `na` for `item_`, starting by `item_ <- "hap"`.
-We then change the name of the time variable (clock hour in day) to `t`, and add `co` ($\cos(\frac{2\pi}{24}t)$) and `si` ($\sin(\frac{2\pi}{24}t)$) as predictors:
+We make a new dataframe `d` by first filtering the data to only scores from one item denoted by `item_`; we consider `hap`, `sad`, `pa`, and `na` for `item_`, starting by `item_ <- "hap"`. We then change the name of the time variable (clock hour in day) to `t`, and add `co` ($\cos(\frac{2\pi}{24}t)$) and `si` ($\sin(\frac{2\pi}{24}t)$) as predictors:
 
 ```{r}
-#| label:read-data
+#| label: read-data
 
 item_ <- "na"
 
@@ -111,11 +109,9 @@ saveRDS(m_random_var,
         )
 ```
 
-And extract person-specific samples (per individual `id` $i$ and sample `iteration` sample $s$) of random effects: `mesor` (i.e., $M_i^s$ from `Intercept)`, `co` (i.e, ${\beta_c}_i^s$), and `si` (i.e., ${\beta_s}_i^s$).
-For the second model, we also extract `sigmaIntercept` (i.e., $\ln(\sigma_i^s)$, initially stored in `r_id__sigma[.,Intercept]`, also store it in `log_sigma`) and `sigma2` (i.e., ${\sigma_i^s}^2$ from `exp(sigmaIntercept)^2`.
+And extract person-specific samples (per individual `id` $i$ and sample `iteration` sample $s$) of random effects: `mesor` (i.e., $M_i^s$ from `Intercept)`, `co` (i.e, ${\beta_c}_i^s$), and `si` (i.e., ${\beta_s}_i^s$). For the second model, we also extract `sigmaIntercept` (i.e., $\ln(\sigma_i^s)$, initially stored in `r_id__sigma[.,Intercept]`, also store it in `log_sigma`) and `sigma2` (i.e., ${\sigma_i^s}^2$ from `exp(sigmaIntercept)^2`.
 
-So for each individual `id` $i$ and sample `iteration` sample $s$, we calculate the correct `phi` ($\phi_i^s = \text{atan2}({\beta_s}_i^s, {\beta_c}_i^s)$) and incorrect `phi_atan` ($\phi_i^s = \text{atan}({\beta_s}_i^s/{\beta_c}_i^s)$) and the corresponding peak shifts $\psi_i^s = \frac{24}{2\pi} \phi_i^s$.
-We further add `phi.begins6` ($[\phi_i^s - \pi/2] \text{ mod } 2\pi$) and `phi.begins12` ($[\phi_i^s - \pi] \text{ mod } 2\pi$) as well, which are the correctly calculated $\phi_i^s$, but assuming the day starts at 6:00 and 12:00, respectively.
+So for each individual `id` $i$ and sample `iteration` sample $s$, we calculate the correct `phi` ($\phi_i^s = \text{atan2}({\beta_s}_i^s, {\beta_c}_i^s)$) and incorrect `phi_atan` ($\phi_i^s = \text{atan}({\beta_s}_i^s/{\beta_c}_i^s)$) and the corresponding peak shifts $\psi_i^s = \frac{24}{2\pi} \phi_i^s$. We further add `phi.begins6` ($[\phi_i^s - \pi/2] \text{ mod } 2\pi$) and `phi.begins12` ($[\phi_i^s - \pi] \text{ mod } 2\pi$) as well, which are the correctly calculated $\phi_i^s$, but assuming the day starts at 6:00 and 12:00, respectively.
 
 From now on, we move on with the estimates of the second model; for the first model, remove `sigma`... lines in the code below.
 
@@ -168,7 +164,7 @@ d_draws <- as_draws_df(m_fit) %>%
   mutate(phi.begins6 = (phi - pi/2) %% (2*pi),
          phi.begins12 = (phi - pi) %% (2*pi))
 
-beep(5)
+beepr::beep(5)
 ```
 
 ## Extracting estimates
@@ -233,7 +229,7 @@ saveRDS(ests_level1,
              )
         )
 
-beep(10)
+beepr::beep(10)
 
 ```
 
@@ -415,7 +411,7 @@ cors_lin_angle <- d_draws %>%
                names_to = "cortypeXmeasure",
                values_to = "value")
 
-beep(7)
+beepr::beep(7)
 
 cors_lin_lin <- d_draws %>%
   group_by(iteration) %>%
@@ -457,7 +453,7 @@ ests_level2 <- cors_lin_angle %>%
          .after = correlation_type) %>%
   select(-cortypeXmeasure)
 
-beep(9)
+beepr::beep(9)
 
 saveRDS(ests_level2,
         here("fits",

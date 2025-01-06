@@ -44,17 +44,26 @@ d_fitbit_joined <- d_fitbit_raw %>%
   mutate(num_measurements = sum(!is.na(y))) %>%
   filter(num_measurements > 24) %>%
   # Selecting up to 3 weeks of data per person
-  mutate(tmp = paste(id_hashed, date)) %>%
-  slice_min(order_by = tmp,
+  mutate(foo = paste(id_hashed, date)) %>%
+  slice_min(order_by = foo,
             n = 21*24,
             na_rm = TRUE) %>%
-  select(-tmp) %>%
-  mutate(id = as.integer(factor(id_hashed)),
-         .before = 1) %>%
+  select(-foo) %>%
+  ungroup() %>%
   left_join(d_fitbit_panas,
             by = "id_hashed") %>%
   left_join(d_fitbit_personality,
-            by = c("id_hashed", "gender"))
+            by = c("id_hashed", "gender")) %>%
+  group_by(id_hashed) %>%
+  mutate(bar = all(if_any(age:ipip_intellect_category,
+                      is.na))
+  ) %>%
+  ungroup() %>%
+  mutate(bar = paste(bar, id_hashed)) %>%
+  arrange(bar) %>%
+  mutate(id = dense_rank(bar),
+         .before = 1) %>%
+  select(-bar)
 
 d_fitbit <- d_fitbit_joined %>%
   select(id:si2) %>%
