@@ -15,7 +15,8 @@ editor: visual
 
 In this repository, I will fit explore multilevel modeling of the cosinor model, starting with single-component cosinor model on ESM data from Leuven Wave 1 dataset.
 
-The raw data is located in the `data` folder, and the long version of it is saved in `./data/d_leuven_long.rsd`. This dataframe contains variables `id` (between 1 and 202), `wave` (only 1), `beep_num` (number of beep throughout study, from 1 to 70), `hour_in_day` (clock hour in base-10, between 0 and 24), `beep_in_day` (beep number of the measurement day, from 1 to 10), `t` (date + time), `Date_Local` (dd-mm-yy), `Time_Local` (clock hour in h:m:s), `item` (12 items: `pa`, `na`, `ang`, `cheer`, `conf`, `dep`, `fear`, `hap`, `lone`, `rlx`, `sad`, `str`), `y` (measured value, from 0 to 100), and `time_in_hours` (decimal time since start of the data collection).
+The raw data is located in the `data` folder, and the long version of it is saved in `./data/d_leuven_long.rsd`.
+This dataframe contains variables `id` (between 1 and 202), `wave` (only 1), `beep_num` (number of beep throughout study, from 1 to 70), `hour_in_day` (clock hour in base-10, between 0 and 24), `beep_in_day` (beep number of the measurement day, from 1 to 10), `t` (date + time), `Date_Local` (dd-mm-yy), `Time_Local` (clock hour in h:m:s), `item` (12 items: `pa`, `na`, `ang`, `cheer`, `conf`, `dep`, `fear`, `hap`, `lone`, `rlx`, `sad`, `str`), `y` (measured value, from 0 to 100), and `time_in_hours` (decimal time since start of the data collection).
 
 The approach is to first fit the cosinor model (with the linear transformation) to the happiness time series using `brms`, then do our stuff (that follows).
 
@@ -40,10 +41,11 @@ library(circular)
 
 ## Fitting the cosinor model
 
-We make a new dataframe `d` by first filtering the data to only scores from one item denoted by `item_`; we consider `hap`, `sad`, `pa`, and `na` for `item_`, starting by `item_ <- "hap"`. We then change the name of the time variable (clock hour in day) to `t`, and add `co` ($\cos(\frac{2\pi}{24}t)$) and `si` ($\sin(\frac{2\pi}{24}t)$) as predictors:
+We make a new dataframe `d` by first filtering the data to only scores from one item denoted by `item_`; we consider `hap`, `sad`, `pa`, and `na` for `item_`, starting by `item_ <- "hap"`.
+We then change the name of the time variable (clock hour in day) to `t`, and add `co` ($\cos(\frac{2\pi}{24}t)$) and `si` ($\sin(\frac{2\pi}{24}t)$) as predictors:
 
 ```{r}
-#| label: read-data
+#| label: read-data-old
 
 item_ <- "na"
 
@@ -53,6 +55,36 @@ d <- d_l %>%
          co = cos(2*pi/24 * t),
          si = sin(2*pi/24 * t)) %>%
   select(id, t, y, co, si)
+
+```
+
+We already have the data for the Leuven 3-wave (wave 1) and fitbit heartrate datasets stored in long format with baseline variables and sine and cosine values in `d_leuven_joined` and `d_fitbit_joined` (in the `data` folder).
+
+We now make two dataframes: One for ESM variables, and one with only the baseline variables (which we need `bl_pa` and `bl_na` here).
+For each of the datasets and items, run the respectove lines.
+
+```{r}
+#| label: read-data
+
+# For leuven dataset; choose pa, na, hap, or sad
+
+item_ <- "pa"
+d <- readRDS(here("data",
+                  "d_leuven_joined.rds")) %>%
+  filter(item == item_)
+
+# For fitbit dataset
+
+item_ <- "fitbit"
+d <- readRDS(here("data",
+                  "d_fitbit_joined.rds"))
+
+
+# Get the baseline PA and NA
+d_bl <- d %>%
+  select(id, bl_pa, bl_na) %>% 
+  distinct()
+
 ```
 
 Then we fit two versions of the cosinor model: One with residual variance estimated as fixed effects (i.e., everyone getting the same $\sigma^2$):
@@ -62,7 +94,7 @@ Then we fit two versions of the cosinor model: One with residual variance estima
 
 (st <- Sys.time())
 m_fixed_var <- brm(
-  y ~ 1 + co + si | id,
+  y ~ 1 + co + si + (1 + co + si | id),
   data = d,
   backend = "cmdstanr",
   chains = 4,
@@ -89,8 +121,8 @@ And one with random residual variance:
 (st <- Sys.time())
 m_random_var <- brm(
   brmsformula(
-    y ~ 1 + co + si | id,
-    sigma ~ 1 | id),
+    y ~ 1 + co + si + (1 + co + si | id),
+    sigma ~ 1 + (1 + co + si | id)),
   data = d,
   backend = "cmdstanr",
   chains = 4,
@@ -109,11 +141,14 @@ saveRDS(m_random_var,
         )
 ```
 
-And extract person-specific samples (per individual `id` $i$ and sample `iteration` sample $s$) of random effects: `mesor` (i.e., $M_i^s$ from `Intercept)`, `co` (i.e, ${\beta_c}_i^s$), and `si` (i.e., ${\beta_s}_i^s$). For the second model, we also extract `sigmaIntercept` (i.e., $\ln(\sigma_i^s)$, initially stored in `r_id__sigma[.,Intercept]`, also store it in `log_sigma`) and `sigma2` (i.e., ${\sigma_i^s}^2$ from `exp(sigmaIntercept)^2`.
+And extract person-specific samples (per individual `id` $i$ and sample `iteration` sample $s$) of random effects: `mesor` (i.e., $M_i^s$ from `Intercept)`, `co` (i.e, ${\beta_c}_i^s$), and `si` (i.e., ${\beta_s}_i^s$).
+For the second model, we also extract `sigmaIntercept` (i.e., $\ln(\sigma_i^s)$, initially stored in `r_id__sigma[.,Intercept]`, also store it in `log_sigma`) and `sigma2` (i.e., ${\sigma_i^s}^2$ from `exp(sigmaIntercept)^2`.
 
-So for each individual `id` $i$ and sample `iteration` sample $s$, we calculate the correct `phi` ($\phi_i^s = \text{atan2}({\beta_s}_i^s, {\beta_c}_i^s)$) and incorrect `phi_atan` ($\phi_i^s = \text{atan}({\beta_s}_i^s/{\beta_c}_i^s)$) and the corresponding peak shifts $\psi_i^s = \frac{24}{2\pi} \phi_i^s$. We further add `phi.begins6` ($[\phi_i^s - \pi/2] \text{ mod } 2\pi$) and `phi.begins12` ($[\phi_i^s - \pi] \text{ mod } 2\pi$) as well, which are the correctly calculated $\phi_i^s$, but assuming the day starts at 6:00 and 12:00, respectively.
+So for each individual `id` $i$ and sample `iteration` sample $s$, we calculate the correct `phi` ($\phi_i^s = \text{atan2}({\beta_s}_i^s, {\beta_c}_i^s)$) and incorrect `phi_atan` ($\phi_i^s = \text{atan}({\beta_s}_i^s/{\beta_c}_i^s)$) and the corresponding peak shifts $\psi_i^s = \frac{24}{2\pi} \phi_i^s$.
+We further add `phi.begins6` ($[\phi_i^s - \pi/2] \text{ mod } 2\pi$) and `phi.begins12` ($[\phi_i^s - \pi] \text{ mod } 2\pi$) as well, which are the correctly calculated $\phi_i^s$, but assuming the day starts at 6:00 and 12:00, respectively.
 
-From now on, we move on with the estimates of the second model; for the first model, remove `sigma`... lines in the code below.
+From now on, we move on with the estimates of the second model; for the first model, remove `sigma`...
+lines in the code below.
 
 ```{r}
 #| label: extract-samples
@@ -221,8 +256,11 @@ ests_level1 <- d_draws %>%
     )
   )
 
-saveRDS(ests_level1,
-        here("fits",
+ests_level1 %>%
+  full_join(d_bl,
+            by = "id") %>% 
+  cbind(item = item_, .) %>% 
+saveRDS(here("fits",
              paste0("ests_level1_",
                     item_,
                     "_random_var.rds")
@@ -231,68 +269,6 @@ saveRDS(ests_level1,
 
 beepr::beep(10)
 
-```
-
-To speed up, we can use `data.table` (and parallelization) with different definitions for `compute_` functions, and of course data.table operations (note that on Windows, you should set `mc.cores = 1`, meaning no parallelization with this code):
-
-```{r}
-#| label: extract-level1-estimates-datatable
-
-# Load data.table library
-library(data.table)
-
-# Helper function for linear stats
-compute_linear_stats <- function(data, variable) {
-    setNames(
-        list(
-            mean(data[[variable]], na.rm = TRUE),
-            median(data[[variable]], na.rm = TRUE),
-            quantile(data[[variable]], 0.975, na.rm = TRUE) - quantile(data[[variable]], 0.025, na.rm = TRUE)
-        ),
-        paste0(variable, c("_mean", "_median", "_ci_width"))
-    )
-}
-
-# Helper function for circular stats
-compute_circular_stats <- function(data, variable) {
-    setNames(
-        list(
-            (mean.circular(data[[variable]]) %% (2 * pi)) %>% as.numeric(),
-            (median.circular(data[[variable]]) %% (2 * pi)) %>% as.numeric(),
-            ((quantile.circular(data[[variable]], 0.975) - quantile.circular(data[[variable]], 0.025)) %% (2 * pi)) %>% as.numeric()
-        ),
-        paste0(variable, c("_circ_mean", "_circ_median", "_circ_ci_width"))
-    )
-}
-
-# Function to compute stats for one group (one id)
-compute_stats <- function(dt) {
-  dt[, {
-    # Linear variables
-    linear_stats <- unlist(lapply(
-      c("mesor", "si", "co", "amp", "sigma2", "log_sigma", "phi", "phi.begins6", "phi.begins12"),
-      function(var) compute_linear_stats(.SD, var)
-    ), recursive = FALSE)
-    
-    # Circular variables
-    circular_stats <- unlist(lapply(
-      c("phi", "phi.begins6", "phi.begins12"),
-      function(var) compute_circular_stats(.SD, var)
-    ), recursive = FALSE)
-    
-    # Combine stats
-    c(linear_stats, circular_stats)
-  }, by = id]
-}
-
-# Convert to data.table
-d_draws_dt <- as.data.table(d_draws)
-
-# Split data by id for parallel processing
-data_split <- split(d_draws_dt, by = "id")
-
-# Apply calculations in parallel
-ests_level1_dt <- rbindlist(mclapply(data_split, compute_stats, mc.cores = detectCores() - 1))
 ```
 
 ### Level-2 estimates
@@ -351,6 +327,11 @@ To make the code cleaner, we use a helper function that, for correlations where 
 # Create correlation function with linear and circular methods
 compute_correlations <- function(x, y) {
   
+  # Removing NA pairs
+  z <- cbind(x, y) %>% na.omit()
+  x <- z[,1]
+  y <- z[,2]
+  
   ## x is a circular variable, y is a linear variable
   cor_mardia <- cor_mardia(x, y)
   
@@ -390,11 +371,18 @@ We then use the functions to do the calculations, make a long dataframe, and sav
 
 # Compute correlations for all combinations
 cors_lin_angle <- d_draws %>%
+  full_join(d_bl,
+            by = "id") %>%
   group_by(iteration) %>%
   summarise(
     crossing(
-      linear_variable = c('mesor', 'log_sigma', 'sigma2', 'amp'),
-      circular_variable = c('phi', 'phi.begins6', 'phi.begins12')
+      linear_variable = c("mesor",
+                          "log_sigma",
+                          "sigma2",
+                          "bl_pa",
+                          "bl_na",
+                          "amp"),
+      circular_variable = c("phi", "phi.begins6", "phi.begins12")
     ) %>%
       mutate(corr_data = map2(
         .x = syms(circular_variable),
@@ -413,14 +401,19 @@ cors_lin_angle <- d_draws %>%
 
 beepr::beep(7)
 
+
 cors_lin_lin <- d_draws %>%
+  full_join(d_bl,
+            by = "id") %>%
   group_by(iteration) %>%
   summarise(
     pair_data = list(
-      tibble(
-        par1 = c("mesor", "mesor", "mesor", "amp", "amp"),
-        par2 = c("amp", "log_sigma", "sigma2", "log_sigma", "sigma2")
-      )
+      c("mesor", "amp", "log_sigma", "sigma2", "bl_pa", "bl_na") %>% 
+        combn(2) %>%
+        t() %>%
+        as.data.frame() %>%
+        rename(par1 = V1, par2 = V2) %>% 
+        tibble()
     )
   ) %>%
   unnest(pair_data) %>%
@@ -455,8 +448,11 @@ ests_level2 <- cors_lin_angle %>%
 
 beepr::beep(9)
 
-saveRDS(ests_level2,
-        here("fits",
+ests_level2 %>%
+  full_join(d_bl,
+            by = "id") %>% 
+  cbind(item = item_, .) %>% 
+saveRDS(here("fits",
              paste0("ests_level2_",
                     item_,
                     "_random_var.rds")

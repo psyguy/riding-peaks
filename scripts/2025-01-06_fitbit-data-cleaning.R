@@ -8,7 +8,7 @@ d_fitbit_personality <- read_csv("data/yfantidou_2022_LifeSnaps4monthMultimodal/
   rename(id_hashed = "user_id") %>%
   select(-type) %>%
   group_by(id_hashed) %>%
-  slice_max(order_by = submitdate,
+  slice_min(order_by = submitdate,
             n = 1) %>%
   select(-submitdate)
 
@@ -16,10 +16,10 @@ d_fitbit_panas <- read_csv("data/yfantidou_2022_LifeSnaps4monthMultimodal/panas.
   select(-1) %>%
   rename(id_hashed = "user_id") %>%
   select(-type) %>%
-  rename(pa = "positive_affect_score",
-         na = "negative_affect_score") %>%
+  rename(bl_pa = "positive_affect_score",
+         bl_na = "negative_affect_score") %>%
   group_by(id_hashed) %>%
-  slice_max(order_by = submitdate,
+  slice_min(order_by = submitdate,
             n = 1) %>%
   select(-submitdate)
 
@@ -65,11 +65,6 @@ d_fitbit_joined <- d_fitbit_raw %>%
          .before = 1) %>%
   select(-bar)
 
-d_fitbit <- d_fitbit_joined %>%
-  select(id:si2) %>%
-  na.omit()
-d_fitbit_cov <- d_fitbit_joined %>%
-  na.omit()
-
-item_ <- "fitbit"
-
+saveRDS(d_fitbit_joined,
+        here("data",
+             "d_fitbit_joined.rds"))
