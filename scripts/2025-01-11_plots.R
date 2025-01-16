@@ -1,21 +1,24 @@
+library(ggrepel)
+
 ## Reading and combining level-1 and level-2 plots
 
 el1 <- e_level1 <-
-  rbind(readRDS("fits/ests_level1_pa_random_var.rds"),
-        readRDS("fits/ests_level1_na_random_var.rds"),
-        readRDS("fits/ests_level1_hap_random_var.rds"),
-        readRDS("fits/ests_level1_sad_random_var.rds"),
-        readRDS("fits/ests_level1_fitbit_random_var.rds"),
-        readRDS("fits/ests_level1_fitbit.cov_random_var.rds")
-        )
+  rbind(
+    readRDS("fits/ests_level1_pa_random_var.rds"),
+    # readRDS("fits/ests_level1_na_random_var.rds"),
+    # readRDS("fits/ests_level1_hap_random_var.rds"),
+    # readRDS("fits/ests_level1_sad_random_var.rds"),
+    # readRDS("fits/ests_level1_fitbit.cov_random_var.rds),
+    readRDS("fits/ests_level1_fitbit_random_var.rds")
+    )
 
 el2 <- e_level2 <-
   rbind(readRDS("fits/ests_level2_pa_random_var.rds"),
-        readRDS("fits/ests_level2_na_random_var.rds"),
-        readRDS("fits/ests_level2_hap_random_var.rds"),
-        readRDS("fits/ests_level2_sad_random_var.rds"),
-        readRDS("fits/ests_level2_fitbit_random_var.rds"),
-        readRDS("fits/ests_level2_fitbit.cov_random_var.rds")
+        # readRDS("fits/ests_level2_na_random_var.rds"),
+        # readRDS("fits/ests_level2_hap_random_var.rds"),
+        # readRDS("fits/ests_level2_sad_random_var.rds"),
+        # readRDS("fits/ests_level2_fitbit.cov_random_var.rds"),
+        readRDS("fits/ests_level2_fitbit_random_var.rds")
         )
 
 # Selecting only pa, fitbit, fitbit.cov
@@ -77,7 +80,7 @@ ee1 <- el1 %>%
 
   # Create the ggplot
 ee1 %>%
-  filter(item != "fitbit") %>%
+  # filter(item != "fitbit") %>%
   ggplot(aes(x = value)) +
   geom_histogram(aes(fill = lin_or_circ) , bins = 48,
                  alpha = 0.7,
@@ -145,9 +148,11 @@ ee2 <-
       TRUE ~ "Starting at 00:00"
     ),
     par1 = case_when(
-      par1 == "mesor" ~ "Correlated with MASOR",
-      par1 == "amp" ~ "Correlated with Amplitude",
-      par1 == "sigma2" ~ "Correlated with random variance",
+      par1 == "mesor" ~ "cor(.,MASOR)",
+      par1 == "amp" ~ "cor(.,Amplitude)",
+      par1 == "sigma2" ~ "cor(.,random variance)",
+      par1 == "bl_pa" ~ "cor(.,baseline PA)",
+      par1 == "bl_na" ~ "cor(.,baseline NA)"
     ),
     correlation_type =
       factor(
@@ -169,7 +174,8 @@ ee2 <-
 ee2 %>%
   filter(correlation_type %in% c("Pearson (lin-lin)",
                                  "Mardia (circ-lin rank)")) %>%
-  filter(item == "fitbit") %>%
+  # filter(item == "fitbit") %>%
+  filter(measure != "cor_abs") %>%
   ggplot(aes(x = value, fill = correlation_type)) +
   geom_histogram(bins = 200,
                  alpha = 0.7,
@@ -179,6 +185,7 @@ ee2 %>%
                scales = "free") +
   geom_vline(aes(xintercept = mm,
                  color = correlation_type)) +
+  geom_vline(xintercept = 0.05) +
   labs(title = "Histograms circular-linear correlations",
        x = "Value",
        y = "Frequency") +

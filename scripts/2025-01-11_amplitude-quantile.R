@@ -33,7 +33,7 @@ f_ampquant <- function(x, y, x_test = 0, y_test = 0, gridsize = 151){
 # amp_hdr (the "p-value" for amplitude estimates) must be
 # added per brms_ fit file. Here we do one-by-one.
 
-d_draws_fitbit <- as_draws_df(readRDS("fits/brms_pa_random_var.rds")) %>%
+d_draws <- as_draws_df(readRDS("fits/brms_fitbit_random_var.rds")) %>%
   select(contains("r_id[") | contains("r_id__sigma[")) %>%
   mutate(iteration = 1:n()) %>%
   pivot_longer(
@@ -45,8 +45,8 @@ d_draws_fitbit <- as_draws_df(readRDS("fits/brms_pa_random_var.rds")) %>%
   mutate(
     id_x_variable =
       str_replace(id_x_variable,
-                  "r_id__sigma\\[(\\d+),Intercept\\]",
-                  "r_id__sigma[\\1,sigmaIntercept]"),
+                  "(r_id__sigma\\[\\d+,)([a-zA-Z]+)(\\])",
+                  "\\1sigma\\2\\3"),
     id = str_extract(id_x_variable,
                      "(?<=\\[)[0-9]+(?=,)") %>%
       as.numeric(),
@@ -77,14 +77,16 @@ d_draws_fitbit <- as_draws_df(readRDS("fits/brms_pa_random_var.rds")) %>%
   # filter(id < 101, id>70) %>%
   group_by(id)
 
-ee <- d_draws_fitbit %>%
+ee <- d_draws %>%
   group_by(id) %>%
   summarize(amp_hdr = compute_alpha_hdr(cbind(co,si)))
 
-ss <- readRDS("fits/ests_level1_fitbit.cov_random_var.rds") %>%
+# ss <-
+readRDS("fits/ests_level1_fitbit_random_var.rds") %>%
   left_join(ee,
             by = "id") %>%
   relocate(amp_hdr,
-           .after = amp_ci_width)
+           .after = amp_ci_width) %>%
+  saveRDS("fits/ests_level1_fitbit_random_var.rds")
 
 beepr::beep(10)
