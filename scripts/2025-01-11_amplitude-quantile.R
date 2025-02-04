@@ -78,7 +78,7 @@ d_draws <- as_draws_df(readRDS("fits/brms_fitbit_random_var.rds")) %>%
   group_by(id)
 
 ee <- d_draws %>%
-  group_by(id) %>%
+  group_by(iteration) %>%
   summarize(amp_hdr = compute_alpha_hdr(cbind(co,si)))
 
 # ss <-

@@ -148,7 +148,7 @@ ee2 <-
       TRUE ~ "Starting at 00:00"
     ),
     par1 = case_when(
-      par1 == "mesor" ~ "cor(.,MASOR)",
+      par1 == "mesor" ~ "cor(.,MESOR)",
       par1 == "amp" ~ "cor(.,Amplitude)",
       par1 == "sigma2" ~ "cor(.,random variance)",
       par1 == "bl_pa" ~ "cor(.,baseline PA)",
@@ -173,10 +173,14 @@ ee2 <-
 
 ee2 %>%
   filter(correlation_type %in% c("Pearson (lin-lin)",
+                                 "Johnson–Wehrly–Mardia (circ-lin)",
                                  "Mardia (circ-lin rank)")) %>%
   # filter(item == "fitbit") %>%
-  filter(measure != "cor_abs") %>%
+  filter(#measure != "cor_abs",
+         measure == "pval") %>%
+  filter(par1 %in% c("cor(.,MESOR)","cor(.,Amplitude)")) %>%
   ggplot(aes(x = value, fill = correlation_type)) +
+  geom_vline(xintercept = 0.05, linetype = "dashed") +
   geom_histogram(bins = 200,
                  alpha = 0.7,
                  position="identity") +
@@ -185,23 +189,23 @@ ee2 %>%
                scales = "free") +
   geom_vline(aes(xintercept = mm,
                  color = correlation_type)) +
-  geom_vline(xintercept = 0.05) +
   labs(title = "Histograms circular-linear correlations",
        x = "Value",
        y = "Frequency") +
   scale_fill_manual(values = c("brown1",
                                # "brown3",
                                # "brown4",
-                               # "lightskyblue",
+                               "lightskyblue",
                                "cornflowerblue")) +
   scale_color_manual(values = c("brown1",
                                 # "brown3",
                                 # "brown4",
-                                # "lightskyblue",
+                                "lightskyblue",
                                 "cornflowerblue"),
                      guide = "none") +
   ggthemes::theme_tufte() +
   # theme_minimal() +
+  scale_y_continuous(transform = "sqrt") +
   theme(
     legend.position = "bottom",
     legend.text = element_text(size = 10),

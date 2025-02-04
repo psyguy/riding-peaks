@@ -58,7 +58,7 @@ d <- d_l %>%
 
 We already have the data for the Leuven 3-wave (wave 1) and fitbit heart rate datasets stored in long format with baseline variables and sine and cosine values in `d_leuven_joined` and `d_fitbit_joined` (in the `data` folder).
 
-We now make two dataframes: One for ESM variables, and one with only the baseline variables (which we need `bl_pa` and `bl_na` here). For each of the datasets and items, run the respectove lines.
+We now make two dataframes: One for ESM variables, and one with only the baseline variables (which we need `bl_pa` and `bl_na` here). For each of the datasets and items, run the respective lines.
 
 ```{r}
 #| label: read-data
@@ -72,9 +72,9 @@ d <- readRDS(here("data",
 
 # For fitbit dataset
 
-# item_ <- "fitbit"
-# d <- readRDS(here("data",
-#                   "d_fitbit_joined.rds"))
+item_ <- "fitbit"
+d <- readRDS(here("data",
+                  "d_fitbit_joined.rds"))
 
 
 # Get the baseline PA and NA
@@ -154,44 +154,39 @@ m_fit <- m_random_var
 
 # Taking out the individual-specific sampled parameter estimates
 d_draws <- as_draws_df(m_fit) %>%
-  select(contains("r_id[") | contains("r_id__sigma[")) %>%
-  mutate(iteration = 1:n()) %>%
+mutate(iteration = row_number()) %>%
   pivot_longer(
     cols = starts_with("r_id"),
-    names_to = "id_x_variable",
+    names_pattern = "r_id(_{0,2}sigma)?\\[(\\d+),(.*)\\]",
+    names_to = c("sigma_part", "id", "term"),
     values_to = "value"
   ) %>%
-  # Extract id (number between [ and ,)
-  mutate(
-    id_x_variable =
-      str_replace(id_x_variable,
-                  "(r_id__sigma\\[\\d+,)([a-zA-Z]+)(\\])",
-                  "\\1sigma\\2\\3"),
-    id = str_extract(id_x_variable,
-                     "(?<=\\[)[0-9]+(?=,)") %>%
-         as.numeric(),
-    # Extract parameter (characters between , and ])
-    parameter = str_extract(id_x_variable,
-                            "(?<=,)[^\\]]+(?=\\])"),
-    # Clean up parameter by removing whitespace
-    parameter = str_trim(parameter)
+  mutate(term = if_else(sigma_part == "__sigma", paste0("sigma_", term), term)) %>%
+  pivot_wider(
+    id_cols = c(iteration, id, b_Intercept, b_co, b_si, b_sigma_Intercept),
+    names_from = term,
+    values_from = value
   ) %>%
-  # Remove original variable column and reorder
-  select(iteration, id, parameter, value) %>%
-  pivot_wider(names_from = "parameter",
-              values_from = "value") %>%
   mutate(
-    ## Not sure if sigmaIntercept is on log scale or not
-    ## Commenting it out now
-    log_sigma = sigmaIntercept,
-    sigma2 = exp(sigmaIntercept)^2,
-    mesor = Intercept,
+    mesor = Intercept + b_Intercept,
+    co = co + b_co,
+    si = si + b_si,
+    logsigma = sigma_Intercept + b_sigma_Intercept
+  ) %>%
+  select(iteration, id,
+         mesor, co, si, logsigma,
+         b_Intercept, b_co, b_si, b_sigma_Intercept) %>%
+  rename(b_logsigma = b_sigma_Intercept) %>%
+  mutate(
+    sigma = exp(logsigma),
+    sigma2 = exp(logsigma)^2,
     amp = sqrt(si^2 + co^2),
     phi = atan2(si, co) %% (2*pi),
     phi_atan = atan(si/co) %% (2*pi),
-    psi = phi*24/(2*pi),
-    psi_atan = phi_atan*24/(2*pi)
-    ) %>%
+    b_amp = sqrt(b_si^2 + b_co^2),
+    b_phi = atan2(b_si, b_co) %% (2*pi),
+    b_phi_atan = atan(b_si/b_co) %% (2*pi)
+  ) %>%
   mutate(phi.begins6 = (phi - pi/2) %% (2*pi),
          phi.begins12 = (phi - pi) %% (2*pi))
 
@@ -230,8 +225,8 @@ compute_circular_stats <- function(data, variable) {
 }
 
 # Apply calculations for all variables
-ests_level1 <- d_draws %>%
-  group_by(id) %>%
+ests_level1.5 <- d_draws %>%
+  group_by(iteration) %>%
   summarise(
     bind_cols(
       # Linear calculations
@@ -252,12 +247,12 @@ ests_level1 <- d_draws %>%
     )
   )
 
-ests_level1 %>%
+ests_level1.5 %>%
   full_join(d_bl,
             by = "id") %>% 
   cbind(item = item_, .) %>% 
 saveRDS(here("fits",
-             paste0("ests_level1_",
+             paste0("ests_level1.5_",
                     item_,
                     "_random_var.rds")
              )
