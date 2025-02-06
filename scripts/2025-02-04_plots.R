@@ -134,7 +134,7 @@ el1 %>%
 ee2 <-
   el2 %>%
   filter(grepl("phi", par2)) %>%
-  filter(!grepl("log", par1)) %>%
+  # filter(!grepl("log", par1)) %>%
   pivot_wider(names_from = measure,
               values_from = value) %>%
   mutate(cor_abs = abs(cor)) %>%
@@ -143,17 +143,17 @@ ee2 <-
                values_to = "value") %>%
   mutate(
     variable = case_when(
-      grepl("6", par2) ~ "Starting at 06:00",
-      grepl("12", par2) ~ "Starting at 12:00",
-      TRUE ~ "Starting at 00:00"
+      grepl("6", par2) ~ "Start: 06:00",
+      grepl("12", par2) ~ "Start: 12:00",
+      TRUE ~ "Start: 00:00"
     ),
-    par1 = case_when(
-      par1 == "mesor" ~ "cor(.,MESOR)",
-      par1 == "amp" ~ "cor(.,Amplitude)",
-      par1 == "sigma2" ~ "cor(.,random variance)",
-      par1 == "bl_pa" ~ "cor(.,baseline PA)",
-      par1 == "bl_na" ~ "cor(.,baseline NA)"
-    ),
+    # par1 = case_when(
+    #   par1 == "mesor" ~ "cor(.,MESOR)",
+    #   par1 == "amp" ~ "cor(.,Amplitude)",
+    #   par1 == "sigma2" ~ "cor(.,random variance)",
+    #   par1 == "bl_pa" ~ "cor(.,baseline PA)",
+    #   par1 == "bl_na" ~ "cor(.,baseline NA)",
+    # ),
     correlation_type =
       factor(
         correlation_type,
@@ -176,11 +176,11 @@ ee2 %>%
                                  "Johnson–Wehrly–Mardia (circ-lin)",
                                  "Mardia (circ-lin rank)")) %>%
   # filter(item == "fitbit") %>%
-  filter(#measure != "cor_abs",
-         measure == "pval") %>%
-  filter(par1 %in% c("cor(.,MESOR)","cor(.,Amplitude)")) %>%
+  filter(measure != "cor_abs",
+         measure != "pval") %>%
+  # filter(par1 %in% c("cor(.,MESOR)","cor(.,Amplitude)", "cor(.,baseline PA)", "cor(.,baseline NA)")) %>%
   ggplot(aes(x = value, fill = correlation_type)) +
-  geom_vline(xintercept = 0.05, linetype = "dashed") +
+  geom_vline(xintercept = 0.00, linetype = "dashed") +
   geom_histogram(bins = 200,
                  alpha = 0.7,
                  position="identity") +
@@ -212,7 +212,7 @@ ee2 %>%
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
     axis.title.y = element_blank(),
-    strip.text = element_text(size = 16) # Increase panel label size
+    strip.text = element_text(size = 10) # Increase panel label size
   ) +
   labs(fill = NULL)
 

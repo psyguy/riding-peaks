@@ -56,7 +56,27 @@ div.sourceCode
 @media screen {
 pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
-</style>
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+  margin-bottom: 0em;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
 
 
 <script src="index_files/libs/clipboard/clipboard.min.js"></script>
@@ -134,7 +154,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Modified</div>
     <div class="quarto-title-meta-contents">
-      <p class="date-modified">2025-01-11</p>
+      <p class="date-modified">2025-02-06</p>
     </div>
   </div>
     
@@ -147,12 +167,7 @@ window.Quarto = {
 
 <section id="intro" class="level1">
 <h1>Intro</h1>
-<p>In this repository, I will fit explore multilevel modeling of the cosinor model, starting with single-component cosinor model on ESM data from Leuven Wave 1 dataset.</p>
-<p>The raw data is located in the <code>data</code> folder, and the long version of it is saved in <code>./data/d_leuven_long.rsd</code>. This dataframe contains variables <code>id</code> (between 1 and 202), <code>wave</code> (only 1), <code>beep_num</code> (number of beep throughout study, from 1 to 70), <code>hour_in_day</code> (clock hour in base-10, between 0 and 24), <code>beep_in_day</code> (beep number of the measurement day, from 1 to 10), <code>t</code> (date + time), <code>Date_Local</code> (dd-mm-yy), <code>Time_Local</code> (clock hour in h:m:s), <code>item</code> (12 items: <code>pa</code>, <code>na</code>, <code>ang</code>, <code>cheer</code>, <code>conf</code>, <code>dep</code>, <code>fear</code>, <code>hap</code>, <code>lone</code>, <code>rlx</code>, <code>sad</code>, <code>str</code>), <code>y</code> (measured value, from 0 to 100), and <code>time_in_hours</code> (decimal time since start of the data collection).</p>
-<p>The approach is to first fit the cosinor model (with the linear transformation) to the happiness time series using <code>brms</code>, then do our stuff (that follows).</p>
-</section>
-<section id="analysis" class="level1">
-<h1>Analysis</h1>
+<p>In this repository, I will fit explore multilevel modeling of the cosinor model, starting with single-component cosinor model fitted to positive affect (PA) ESM time series data from Leuven Wave 1 of <span class="citation" data-cites="erbas_2018_WhyDonAlways">Erbas et al. (<a href="#ref-erbas_2018_WhyDonAlways" role="doc-biblioref">2018</a>)</span>, and heart rate (fitbit) data from <span class="citation" data-cites="yfantidou_2022_LifeSnaps4monthMultimodal">Yfantidou et al. (<a href="#ref-yfantidou_2022_LifeSnaps4monthMultimodal" role="doc-biblioref">2022</a>)</span>. The processed datasets (saved as <code>d_leuven_joined.rds</code> and <code>d_fitbit_joined.rds</code> in the <code>data</code> folder) contains ILD measured values in <code>y</code>, the base-10 clock hour (between 0 and 24) in <code>t</code>, the regressors <code>co</code> (<span class="math inline">\(\cos(\frac{2\pi}{24}t)\)</span>) and <code>si</code> (<span class="math inline">\(\sin(\frac{2\pi}{24}t)\)</span>) calculated for each <code>t</code>, baseline PA (<code>b_pa</code>), and baseline NA (<code>bl_na</code>).</p>
 <p>The required packages are as follows:</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(brms)</span>
@@ -166,379 +181,469 @@ window.Quarto = {
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(data.table)</span>
 <span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(circular)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
+</section>
+<section id="analyses" class="level1">
+<h1>Analyses</h1>
+<p>We load the datasets, and run the analyses that follow for each separately.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># For the Leuven dataset; choose pa</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>item_ <span class="ot">&lt;-</span> <span class="st">"pa"</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"data"</span>,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>                  <span class="st">"d_leuven_joined.rds"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(item <span class="sc">==</span> item_)</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"># For fitbit dataset</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>item_ <span class="ot">&lt;-</span> <span class="st">"fitbit"</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"data"</span>,</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>                  <span class="st">"d_fitbit_joined.rds"</span>))</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Get the baseline PA and NA for the selected dataset</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>d_bl <span class="ot">&lt;-</span> d <span class="sc">%&gt;%</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(id, bl_pa, bl_na) <span class="sc">%&gt;%</span> </span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">distinct</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
 <section id="fitting-the-cosinor-model" class="level2">
 <h2 class="anchored" data-anchor-id="fitting-the-cosinor-model">Fitting the cosinor model</h2>
-<p>We make a new dataframe <code>d</code> by first filtering the data to only scores from one item denoted by <code>item_</code>; we consider <code>hap</code>, <code>sad</code>, <code>pa</code>, and <code>na</code> for <code>item_</code>, starting by <code>item_ &lt;- "hap"</code>. We then change the name of the time variable (clock hour in day) to <code>t</code>, and add <code>co</code> (<span class="math inline">\(\cos(\frac{2\pi}{24}t)\)</span>) and <code>si</code> (<span class="math inline">\(\sin(\frac{2\pi}{24}t)\)</span>) as predictors:</p>
+<p>We fit two versions of the cosinor model.</p>
+<section id="model-with-fixed-residual-variance" class="level3">
+<h3 class="anchored" data-anchor-id="model-with-fixed-residual-variance">Model with fixed residual variance</h3>
+<p>One with residual variance estimated as fixed effects (i.e., everyone getting the same <span class="math inline">\(\sigma^2\)</span>), that is,</p>
+<p><span class="math display">\[
+\begin{aligned}
+&amp;M_i = M + m_i \\
+&amp;C_i = C + c_i \\
+&amp;S_i = S + c_i \\
+&amp;\sigma_i = \sigma
+\end{aligned} \quad,
+\]</span></p>
+<p>where</p>
+<p><span class="math display">\[
+\begin{bmatrix}M_i \\C_i \\S_i \end{bmatrix}
+\sim\mathcal{MN}(
+\begin{bmatrix}M \\C \\S \end{bmatrix}
+,\mathbf{\Sigma})
+\]</span></p>
+<p>using the following <code>brms</code> code:</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>item_ <span class="ot">&lt;-</span> <span class="st">"na"</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> d_l <span class="sc">%&gt;%</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(item <span class="sc">==</span> item_) <span class="sc">%&gt;%</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">t =</span> hour_in_day,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>         <span class="at">co =</span> <span class="fu">cos</span>(<span class="dv">2</span><span class="sc">*</span>pi<span class="sc">/</span><span class="dv">24</span> <span class="sc">*</span> t),</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>         <span class="at">si =</span> <span class="fu">sin</span>(<span class="dv">2</span><span class="sc">*</span>pi<span class="sc">/</span><span class="dv">24</span> <span class="sc">*</span> t)) <span class="sc">%&gt;%</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(id, t, y, co, si)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-<p>We already have the data for the Leuven 3-wave (wave 1) and fitbit heartrate datasets stored in long format with baseline variables and sine and cosine values in <code>d_leuven_joined</code> and <code>d_fitbit_joined</code> (in the <code>data</code> folder).</p>
-<p>We now make two dataframes: One for ESM variables, and one with only the baseline variables (which we need <code>bl_pa</code> and <code>bl_na</code> here). For each of the datasets and items, run the respectove lines.</p>
-<div class="cell">
-<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># For leuven dataset; choose pa, na, hap, or sad</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>item_ <span class="ot">&lt;-</span> <span class="st">"pa"</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"data"</span>,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>                  <span class="st">"d_leuven_joined.rds"</span>)) <span class="sc">%&gt;%</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(item <span class="sc">==</span> item_)</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co"># For fitbit dataset</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>item_ <span class="ot">&lt;-</span> <span class="st">"fitbit"</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"data"</span>,</span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>                  <span class="st">"d_fitbit_joined.rds"</span>))</span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Get the baseline PA and NA</span></span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>d_bl <span class="ot">&lt;-</span> d <span class="sc">%&gt;%</span></span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(id, bl_pa, bl_na) <span class="sc">%&gt;%</span> </span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">distinct</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-<p>Then we fit two versions of the cosinor model: One with residual variance estimated as fixed effects (i.e., everyone getting the same <span class="math inline">\(\sigma^2\)</span>):</p>
-<div class="cell">
-<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>(st <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>())</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>m_fixed_var <span class="ot">&lt;-</span> <span class="fu">brm</span>(</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  y <span class="sc">~</span> <span class="dv">1</span> <span class="sc">+</span> co <span class="sc">+</span> si <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">+</span> co <span class="sc">+</span> si <span class="sc">|</span> id),</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> d,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">backend =</span> <span class="st">"cmdstanr"</span>,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">chains =</span> <span class="dv">4</span>,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">iter =</span> <span class="dv">3000</span>,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">threads =</span> <span class="fu">threading</span>(<span class="dv">2</span>),</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">cores =</span> <span class="dv">8</span>)</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="fu">Sys.time</span>() <span class="sc">-</span> st</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>beepr<span class="sc">::</span><span class="fu">beep</span>(<span class="dv">1</span>)</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(m_fixed_var,</span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>        <span class="fu">here</span>(<span class="st">"fits"</span>,</span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>            <span class="fu">paste0</span>(<span class="st">"brms_"</span>,</span>
-<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>                   item_,</span>
-<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>                   <span class="st">"_fixed_var.rds"</span>)</span>
-<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>            )</span>
-<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>        )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-<p>And one with random residual variance:</p>
-<div class="cell">
-<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>(st <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>())</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>m_random_var <span class="ot">&lt;-</span> <span class="fu">brm</span>(</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">brmsformula</span>(</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    y <span class="sc">~</span> <span class="dv">1</span> <span class="sc">+</span> co <span class="sc">+</span> si <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">+</span> co <span class="sc">+</span> si <span class="sc">|</span> id),</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    sigma <span class="sc">~</span> <span class="dv">1</span> <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">+</span> co <span class="sc">+</span> si <span class="sc">|</span> id)),</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> d,</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">backend =</span> <span class="st">"cmdstanr"</span>,</span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">chains =</span> <span class="dv">4</span>,</span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">iter =</span> <span class="dv">3000</span>,</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">threads =</span> <span class="fu">threading</span>(<span class="dv">2</span>),</span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">cores =</span> <span class="dv">8</span>)</span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="fu">Sys.time</span>() <span class="sc">-</span> st</span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>beepr<span class="sc">::</span><span class="fu">beep</span>(<span class="dv">3</span>)</span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(m_random_var,</span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>        <span class="fu">here</span>(<span class="st">"fits"</span>,</span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>             <span class="fu">paste0</span>(<span class="st">"brms_"</span>,</span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>                    item_,</span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>                    <span class="st">"_random_var.rds"</span>)</span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>             )</span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>        )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-<p>And extract person-specific samples (per individual <code>id</code> <span class="math inline">\(i\)</span> and sample <code>iteration</code> sample <span class="math inline">\(s\)</span>) of random effects: <code>mesor</code> (i.e., <span class="math inline">\(M_i^s\)</span> from <code>Intercept)</code>, <code>co</code> (i.e, <span class="math inline">\({\beta_c}_i^s\)</span>), and <code>si</code> (i.e., <span class="math inline">\({\beta_s}_i^s\)</span>). For the second model, we also extract <code>sigmaIntercept</code> (i.e., <span class="math inline">\(\ln(\sigma_i^s)\)</span>, initially stored in <code>r_id__sigma[.,Intercept]</code>, also store it in <code>log_sigma</code>) and <code>sigma2</code> (i.e., <span class="math inline">\({\sigma_i^s}^2\)</span> from <code>exp(sigmaIntercept)^2</code>.</p>
-<p>So for each individual <code>id</code> <span class="math inline">\(i\)</span> and sample <code>iteration</code> sample <span class="math inline">\(s\)</span>, we calculate the correct <code>phi</code> (<span class="math inline">\(\phi_i^s = \text{atan2}({\beta_s}_i^s, {\beta_c}_i^s)\)</span>) and incorrect <code>phi_atan</code> (<span class="math inline">\(\phi_i^s = \text{atan}({\beta_s}_i^s/{\beta_c}_i^s)\)</span>) and the corresponding peak shifts <span class="math inline">\(\psi_i^s = \frac{24}{2\pi} \phi_i^s\)</span>. We further add <code>phi.begins6</code> (<span class="math inline">\([\phi_i^s - \pi/2] \text{ mod } 2\pi\)</span>) and <code>phi.begins12</code> (<span class="math inline">\([\phi_i^s - \pi] \text{ mod } 2\pi\)</span>) as well, which are the correctly calculated <span class="math inline">\(\phi_i^s\)</span>, but assuming the day starts at 6:00 and 12:00, respectively.</p>
-<p>From now on, we move on with the estimates of the second model; for the first model, remove <code>sigma</code>… lines in the code below.</p>
-<div class="cell">
-<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Selecting the second model from now on</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>m_fit <span class="ot">&lt;-</span> m_random_var</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Taking out the individual-specific sampled parameter estimates</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>d_draws <span class="ot">&lt;-</span> <span class="fu">as_draws_df</span>(m_fit) <span class="sc">%&gt;%</span></span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="fu">contains</span>(<span class="st">"r_id["</span>) <span class="sc">|</span> <span class="fu">contains</span>(<span class="st">"r_id__sigma["</span>)) <span class="sc">%&gt;%</span></span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">iteration =</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">n</span>()) <span class="sc">%&gt;%</span></span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_longer</span>(</span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">cols =</span> <span class="fu">starts_with</span>(<span class="st">"r_id"</span>),</span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">names_to =</span> <span class="st">"id_x_variable"</span>,</span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">values_to =</span> <span class="st">"value"</span></span>
-<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Extract id (number between [ and ,)</span></span>
-<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>    <span class="at">id_x_variable =</span></span>
-<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>      <span class="fu">str_replace</span>(id_x_variable,</span>
-<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>                  <span class="st">"(r_id__sigma</span><span class="sc">\\</span><span class="st">[</span><span class="sc">\\</span><span class="st">d+,)([a-zA-Z]+)(</span><span class="sc">\\</span><span class="st">])"</span>,</span>
-<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>                  <span class="st">"</span><span class="sc">\\</span><span class="st">1sigma</span><span class="sc">\\</span><span class="st">2</span><span class="sc">\\</span><span class="st">3"</span>),</span>
-<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">id =</span> <span class="fu">str_extract</span>(id_x_variable,</span>
-<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>                     <span class="st">"(?&lt;=</span><span class="sc">\\</span><span class="st">[)[0-9]+(?=,)"</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>         <span class="fu">as.numeric</span>(),</span>
-<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Extract parameter (characters between , and ])</span></span>
-<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>    <span class="at">parameter =</span> <span class="fu">str_extract</span>(id_x_variable,</span>
-<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>                            <span class="st">"(?&lt;=,)[^</span><span class="sc">\\</span><span class="st">]]+(?=</span><span class="sc">\\</span><span class="st">])"</span>),</span>
-<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Clean up parameter by removing whitespace</span></span>
-<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>    <span class="at">parameter =</span> <span class="fu">str_trim</span>(parameter)</span>
-<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Remove original variable column and reorder</span></span>
-<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(iteration, id, parameter, value) <span class="sc">%&gt;%</span></span>
-<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_wider</span>(<span class="at">names_from =</span> <span class="st">"parameter"</span>,</span>
-<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a>              <span class="at">values_from =</span> <span class="st">"value"</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a>    <span class="do">## Not sure if sigmaIntercept is on log scale or not</span></span>
-<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a>    <span class="do">## Commenting it out now</span></span>
-<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a>    <span class="at">log_sigma =</span> sigmaIntercept,</span>
-<span id="cb6-36"><a href="#cb6-36" aria-hidden="true" tabindex="-1"></a>    <span class="at">sigma2 =</span> <span class="fu">exp</span>(sigmaIntercept)<span class="sc">^</span><span class="dv">2</span>,</span>
-<span id="cb6-37"><a href="#cb6-37" aria-hidden="true" tabindex="-1"></a>    <span class="at">mesor =</span> Intercept,</span>
-<span id="cb6-38"><a href="#cb6-38" aria-hidden="true" tabindex="-1"></a>    <span class="at">amp =</span> <span class="fu">sqrt</span>(si<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> co<span class="sc">^</span><span class="dv">2</span>),</span>
-<span id="cb6-39"><a href="#cb6-39" aria-hidden="true" tabindex="-1"></a>    <span class="at">phi =</span> <span class="fu">atan2</span>(si, co) <span class="sc">%%</span> (<span class="dv">2</span><span class="sc">*</span>pi),</span>
-<span id="cb6-40"><a href="#cb6-40" aria-hidden="true" tabindex="-1"></a>    <span class="at">phi_atan =</span> <span class="fu">atan</span>(si<span class="sc">/</span>co) <span class="sc">%%</span> (<span class="dv">2</span><span class="sc">*</span>pi),</span>
-<span id="cb6-41"><a href="#cb6-41" aria-hidden="true" tabindex="-1"></a>    <span class="at">psi =</span> phi<span class="sc">*</span><span class="dv">24</span><span class="sc">/</span>(<span class="dv">2</span><span class="sc">*</span>pi),</span>
-<span id="cb6-42"><a href="#cb6-42" aria-hidden="true" tabindex="-1"></a>    <span class="at">psi_atan =</span> phi_atan<span class="sc">*</span><span class="dv">24</span><span class="sc">/</span>(<span class="dv">2</span><span class="sc">*</span>pi)</span>
-<span id="cb6-43"><a href="#cb6-43" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">%&gt;%</span></span>
-<span id="cb6-44"><a href="#cb6-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">phi.begins6 =</span> (phi <span class="sc">-</span> pi<span class="sc">/</span><span class="dv">2</span>) <span class="sc">%%</span> (<span class="dv">2</span><span class="sc">*</span>pi),</span>
-<span id="cb6-45"><a href="#cb6-45" aria-hidden="true" tabindex="-1"></a>         <span class="at">phi.begins12 =</span> (phi <span class="sc">-</span> pi) <span class="sc">%%</span> (<span class="dv">2</span><span class="sc">*</span>pi))</span>
-<span id="cb6-46"><a href="#cb6-46" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-47"><a href="#cb6-47" aria-hidden="true" tabindex="-1"></a>beepr<span class="sc">::</span><span class="fu">beep</span>(<span class="dv">5</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>(st <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>())</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>m_fixed_var <span class="ot">&lt;-</span> <span class="fu">brm</span>(</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  y <span class="sc">~</span> <span class="dv">1</span> <span class="sc">+</span> co <span class="sc">+</span> si <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">+</span> co <span class="sc">+</span> si <span class="sc">|</span> id),</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> d,</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">backend =</span> <span class="st">"cmdstanr"</span>,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">chains =</span> <span class="dv">4</span>,</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">iter =</span> <span class="dv">3000</span>,</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">threads =</span> <span class="fu">threading</span>(<span class="dv">2</span>),</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">cores =</span> <span class="dv">8</span>)</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="fu">Sys.time</span>() <span class="sc">-</span> st</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>beepr<span class="sc">::</span><span class="fu">beep</span>(<span class="dv">1</span>)</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(m_fixed_var,</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>        <span class="fu">here</span>(<span class="st">"fits"</span>,</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>            <span class="fu">paste0</span>(<span class="st">"brms_"</span>,</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>                   item_,</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>                   <span class="st">"_fixed_var.rds"</span>)</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>            )</span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>        )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
-<section id="extracting-estimates" class="level2">
-<h2 class="anchored" data-anchor-id="extracting-estimates">Extracting estimates</h2>
+<section id="model-with-random-residual-variance" class="level3">
+<h3 class="anchored" data-anchor-id="model-with-random-residual-variance">Model with random residual variance</h3>
+<p>We also fit a model with random residual variance, in which we also include an equation for the log of the individual specific variances <span class="math inline">\(\rho_i = \log\sigma_i\)</span> and the log of the fixed variance are <span class="math inline">\(\rho = \log\sigma\)</span>, leading to</p>
+<p><span class="math display">\[
+\begin{aligned}
+&amp;M_i = M + m_i \\
+&amp;C_i = C + c_i \\
+&amp;S_i = S + c_i \\
+&amp;\rho_i = \rho + \varrho_i
+\end{aligned} \quad ,
+\]</span></p>
+<p>with</p>
+<p><span class="math display">\[
+\begin{bmatrix}M_i \\C_i \\S_i \\\rho_i\end{bmatrix}
+\sim\mathcal{MN}(
+\begin{bmatrix}M \\C \\S \\\rho\end{bmatrix}
+,\mathbf{\Sigma})
+\]</span></p>
+<p>using the following <code>brms</code> code:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>(st <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>())</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>m_random_var <span class="ot">&lt;-</span> <span class="fu">brm</span>(</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">brmsformula</span>(</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    y <span class="sc">~</span> <span class="dv">1</span> <span class="sc">+</span> co <span class="sc">+</span> si <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">+</span> co <span class="sc">+</span> si <span class="sc">|</span> i <span class="sc">|</span> id),</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    sigma <span class="sc">~</span> <span class="dv">1</span> <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">|</span> i <span class="sc">|</span> id)),</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> d,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">backend =</span> <span class="st">"cmdstanr"</span>,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">chains =</span> <span class="dv">4</span>,</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">iter =</span> <span class="dv">3000</span>,</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">threads =</span> <span class="fu">threading</span>(<span class="dv">2</span>),</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">cores =</span> <span class="dv">8</span>)</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="fu">Sys.time</span>() <span class="sc">-</span> st</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>beepr<span class="sc">::</span><span class="fu">beep</span>(<span class="dv">3</span>)</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(m_random_var,</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>        <span class="fu">here</span>(<span class="st">"fits"</span>,</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>             <span class="fu">paste0</span>(<span class="st">"brms_"</span>,</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>                    item_,</span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>                    <span class="st">"_random_var.rds"</span>)</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>             )</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>        )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>Note that <code>| i | id</code> in the random effect specification sets the grouping variable <code>id</code> and assures to estimate the correlation between the random intercept and random slope in the first equation (for <code>y</code>) and the random intercept in the second equation (for <code>sigma</code>). We move on doing the analyses with the second model, so,</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Model to move forward with</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>m_fit <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"fits"</span>,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>             <span class="fu">paste0</span>(<span class="st">"brms_"</span>,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>                    item_,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>                    <span class="st">"_random_var.rds"</span>)))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="model-outputs" class="level3">
+<h3 class="anchored" data-anchor-id="model-outputs">Model outputs</h3>
+<p>The model <code>m_fit</code> contains samples from <span class="math inline">\(D=6,000\)</span> HMC draws, that include <span class="math inline">\(4 \times D\)</span> values for the fixed effects <span class="math inline">\(M^{(d)}\)</span>, <span class="math inline">\(C^{(d)}\)</span>, <span class="math inline">\(S^{(d)}\)</span>, and <span class="math inline">\(\rho^{(d)}\)</span> (reported, respectively, as <code>b_Intercept</code>, <code>b_co</code>, <code>b_si</code>, and <code>b_sigma_Intercept</code>), <span class="math inline">\((6+4) \times D\)</span> values for the correlations and SDs of <span class="math inline">\(\mathbf{\Sigma}^{(d)}\)</span>, and <span class="math inline">\(4 \times N \times D\)</span> person-specific the random effects <span class="math inline">\(m_i^{(d)}\)</span>, <span class="math inline">\(c_i^{(d)}\)</span>, <span class="math inline">\(s_i^{(d)}\)</span>, and <span class="math inline">\(\varrho_i^{(d)}\)</span> (reported, respectively, as <code>Intercept</code>, <code>co</code>, <code>si</code>, and <code>sigma_Intercept</code>).</p>
+<p>From these, at each draw <span class="math inline">\(d\)</span>, we calculate the person-specific parameters <span class="math inline">\(M_i^{(d)}\)</span>, <span class="math inline">\(C_i^{(d)}\)</span>, <span class="math inline">\(S_i^{(d)}\)</span>, and <span class="math inline">\(\rho_i^{(d)}\)</span> by summing the fixed and random effects and storing them, respectively, in <code>mesor</code>, <code>co</code>, <code>si</code> and <code>logsigma</code> columns. Based on these, we calculate person-specific SD (<code>sigma = exp(logsigma)</code>) and variance (<code>sigma2 = exp(logsigma)^2</code>), and the implied amplitude <code>amp</code> and phase (correctly calculated with <code>atan2(si,co)</code> in <code>phi</code>, and incorrectly calculate using <code>atan(si/co)</code> in <code>phi_atan</code>), and do these transformations for fixed effects (the <code>b_</code> variables). We also calculate the phase assuming starting the cycle, instead of midnight, at 6:00 (<code>phi.begins6</code>) and at 12:00 (<code>phi.begins12</code>).</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Taking out the individual-specific sampled parameter estimates</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>d_draws <span class="ot">&lt;-</span> <span class="fu">as_draws_df</span>(m_fit) <span class="sc">%&gt;%</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">mutate</span>(<span class="at">iteration =</span> <span class="fu">row_number</span>()) <span class="sc">%&gt;%</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_longer</span>(</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">cols =</span> <span class="fu">starts_with</span>(<span class="st">"r_id"</span>),</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">names_pattern =</span> <span class="st">"r_id(_{0,2}sigma)?</span><span class="sc">\\</span><span class="st">[(</span><span class="sc">\\</span><span class="st">d+),(.*)</span><span class="sc">\\</span><span class="st">]"</span>,</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">names_to =</span> <span class="fu">c</span>(<span class="st">"sigma_part"</span>, <span class="st">"id"</span>, <span class="st">"term"</span>),</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">values_to =</span> <span class="st">"value"</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">term =</span> <span class="fu">if_else</span>(sigma_part <span class="sc">==</span> <span class="st">"__sigma"</span>, <span class="fu">paste0</span>(<span class="st">"sigma_"</span>, term), term)) <span class="sc">%&gt;%</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_wider</span>(</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">id_cols =</span> <span class="fu">c</span>(iteration, id, b_Intercept, b_co, b_si, b_sigma_Intercept),</span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">names_from =</span> term,</span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>    <span class="at">values_from =</span> value</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>    <span class="at">mesor =</span> Intercept <span class="sc">+</span> b_Intercept,</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">co =</span> co <span class="sc">+</span> b_co,</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">si =</span> si <span class="sc">+</span> b_si,</span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">logsigma =</span> sigma_Intercept <span class="sc">+</span> b_sigma_Intercept</span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(iteration, id,</span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>         mesor, co, si, logsigma,</span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>         b_Intercept, b_co, b_si, b_sigma_Intercept) <span class="sc">%&gt;%</span></span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(<span class="at">b_logsigma =</span> b_sigma_Intercept) <span class="sc">%&gt;%</span></span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a>    <span class="at">sigma =</span> <span class="fu">exp</span>(logsigma),</span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a>    <span class="at">sigma2 =</span> <span class="fu">exp</span>(logsigma)<span class="sc">^</span><span class="dv">2</span>,</span>
+<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>    <span class="at">amp =</span> <span class="fu">sqrt</span>(si<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> co<span class="sc">^</span><span class="dv">2</span>),</span>
+<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a>    <span class="at">phi =</span> <span class="fu">atan2</span>(si, co) <span class="sc">%%</span> (<span class="dv">2</span><span class="sc">*</span>pi),</span>
+<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a>    <span class="at">phi_atan =</span> <span class="fu">atan</span>(si<span class="sc">/</span>co) <span class="sc">%%</span> (<span class="dv">2</span><span class="sc">*</span>pi),</span>
+<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a>    <span class="at">b_amp =</span> <span class="fu">sqrt</span>(b_si<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> b_co<span class="sc">^</span><span class="dv">2</span>),</span>
+<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a>    <span class="at">b_phi =</span> <span class="fu">atan2</span>(b_si, b_co) <span class="sc">%%</span> (<span class="dv">2</span><span class="sc">*</span>pi),</span>
+<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a>    <span class="at">b_phi_atan =</span> <span class="fu">atan</span>(b_si<span class="sc">/</span>b_co) <span class="sc">%%</span> (<span class="dv">2</span><span class="sc">*</span>pi)</span>
+<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb6-36"><a href="#cb6-36" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">phi.begins6 =</span> (phi <span class="sc">-</span> pi<span class="sc">/</span><span class="dv">2</span>) <span class="sc">%%</span> (<span class="dv">2</span><span class="sc">*</span>pi),</span>
+<span id="cb6-37"><a href="#cb6-37" aria-hidden="true" tabindex="-1"></a>         <span class="at">phi.begins12 =</span> (phi <span class="sc">-</span> pi) <span class="sc">%%</span> (<span class="dv">2</span><span class="sc">*</span>pi)) <span class="sc">%&gt;%</span> </span>
+<span id="cb6-38"><a href="#cb6-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">id =</span> id <span class="sc">%&gt;%</span> <span class="fu">as.integer</span>())</span>
+<span id="cb6-39"><a href="#cb6-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-40"><a href="#cb6-40" aria-hidden="true" tabindex="-1"></a>beepr<span class="sc">::</span><span class="fu">beep</span>(<span class="dv">5</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+</section>
+<section id="obtaining-estimates" class="level2">
+<h2 class="anchored" data-anchor-id="obtaining-estimates">Obtaining estimates</h2>
 <section id="level-1-estimates" class="level3">
 <h3 class="anchored" data-anchor-id="level-1-estimates">Level-1 estimates</h3>
 <p>To get person-specific summary statistics, we do calculations across iterations (i.e., only <code>group_by(id) %&gt;% summarize(...)</code>) to get mean, median, and 95%CI width of our estimated linear parameters, and for the circular parameters (<code>phi</code>, <code>phi.begins6</code>, <code>phi.begins12</code>), once incorrectly (using linear methods) and once correctly (using circular methods).</p>
+<p>We also need to get the complementary of posterior predictive p-value using the percentage of density in which <span class="math inline">\([0,0]\)</span> falls by finding the <span class="math inline">\(\alpha\%\text{-HDR}\)</span> (highest density region) for <code>amp</code> based on samples of <code>co</code> and <code>si</code>, which we do with <code>compute_alpha_hdr</code>:</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Helper function for linear stats</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>compute_linear_stats <span class="ot">&lt;-</span> <span class="cf">function</span>(data, variable) {</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tibble</span>(</span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean =</span> <span class="fu">mean</span>(data[[variable]], <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">median =</span> <span class="fu">median</span>(data[[variable]], <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">ci_width =</span> <span class="fu">quantile</span>(data[[variable]], <span class="fl">0.975</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">quantile</span>(data[[variable]], <span class="fl">0.025</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">rename_with</span>(<span class="sc">~</span> <span class="fu">paste0</span>(variable, <span class="st">"_"</span>, .))</span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Helper function for circular stats</span></span>
-<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>compute_circular_stats <span class="ot">&lt;-</span> <span class="cf">function</span>(data, variable) {</span>
-<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tibble</span>(</span>
-<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>    <span class="at">circ_mean =</span> (<span class="fu">mean.circular</span>(data[[variable]]) <span class="sc">%%</span> (<span class="dv">2</span> <span class="sc">*</span> pi)) <span class="sc">%&gt;%</span> <span class="fu">as.numeric</span>(),</span>
-<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>    <span class="at">circ_median =</span> (<span class="fu">median.circular</span>(data[[variable]]) <span class="sc">%%</span> (<span class="dv">2</span> <span class="sc">*</span> pi)) <span class="sc">%&gt;%</span> <span class="fu">as.numeric</span>(),</span>
-<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>    <span class="at">circ_ci_width =</span> (</span>
-<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>      (<span class="fu">quantile.circular</span>(data[[variable]], <span class="fl">0.975</span>) <span class="sc">-</span> <span class="fu">quantile.circular</span>(data[[variable]], <span class="fl">0.025</span>)) <span class="sc">%%</span> (<span class="dv">2</span> <span class="sc">*</span> pi)</span>
-<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">%&gt;%</span> <span class="fu">as.numeric</span>()</span>
-<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a>    <span class="fu">rename_with</span>(<span class="sc">~</span> <span class="fu">paste0</span>(variable, <span class="st">"_"</span>, .))</span>
-<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a><span class="co"># Apply calculations for all variables</span></span>
-<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a>ests_level1 <span class="ot">&lt;-</span> d_draws <span class="sc">%&gt;%</span></span>
-<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(id) <span class="sc">%&gt;%</span></span>
-<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
-<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a>    <span class="fu">bind_cols</span>(</span>
-<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Linear calculations</span></span>
-<span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"mesor"</span>),</span>
-<span id="cb7-30"><a href="#cb7-30" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"si"</span>),</span>
-<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"co"</span>),</span>
-<span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"amp"</span>),</span>
-<span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"sigma2"</span>),</span>
-<span id="cb7-34"><a href="#cb7-34" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"log_sigma"</span>),</span>
-<span id="cb7-35"><a href="#cb7-35" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"phi"</span>),</span>
-<span id="cb7-36"><a href="#cb7-36" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"phi.begins6"</span>),</span>
-<span id="cb7-37"><a href="#cb7-37" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"phi.begins12"</span>),</span>
-<span id="cb7-38"><a href="#cb7-38" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-39"><a href="#cb7-39" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Circular calculations</span></span>
-<span id="cb7-40"><a href="#cb7-40" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_circular_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"phi"</span>),</span>
-<span id="cb7-41"><a href="#cb7-41" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_circular_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"phi.begins6"</span>),</span>
-<span id="cb7-42"><a href="#cb7-42" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_circular_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"phi.begins12"</span>)</span>
-<span id="cb7-43"><a href="#cb7-43" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb7-44"><a href="#cb7-44" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb7-45"><a href="#cb7-45" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-46"><a href="#cb7-46" aria-hidden="true" tabindex="-1"></a>ests_level1 <span class="sc">%&gt;%</span></span>
-<span id="cb7-47"><a href="#cb7-47" aria-hidden="true" tabindex="-1"></a>  <span class="fu">full_join</span>(d_bl,</span>
-<span id="cb7-48"><a href="#cb7-48" aria-hidden="true" tabindex="-1"></a>            <span class="at">by =</span> <span class="st">"id"</span>) <span class="sc">%&gt;%</span> </span>
-<span id="cb7-49"><a href="#cb7-49" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cbind</span>(<span class="at">item =</span> item_, .) <span class="sc">%&gt;%</span> </span>
-<span id="cb7-50"><a href="#cb7-50" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(<span class="fu">here</span>(<span class="st">"fits"</span>,</span>
-<span id="cb7-51"><a href="#cb7-51" aria-hidden="true" tabindex="-1"></a>             <span class="fu">paste0</span>(<span class="st">"ests_level1_"</span>,</span>
-<span id="cb7-52"><a href="#cb7-52" aria-hidden="true" tabindex="-1"></a>                    item_,</span>
-<span id="cb7-53"><a href="#cb7-53" aria-hidden="true" tabindex="-1"></a>                    <span class="st">"_random_var.rds"</span>)</span>
-<span id="cb7-54"><a href="#cb7-54" aria-hidden="true" tabindex="-1"></a>             )</span>
-<span id="cb7-55"><a href="#cb7-55" aria-hidden="true" tabindex="-1"></a>        )</span>
-<span id="cb7-56"><a href="#cb7-56" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-57"><a href="#cb7-57" aria-hidden="true" tabindex="-1"></a>beepr<span class="sc">::</span><span class="fu">beep</span>(<span class="dv">10</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Load required packages</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">require</span>(ks)</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">require</span>(ggplot2)</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="fu">require</span>(metR)</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>compute_alpha_hdr <span class="ot">&lt;-</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>  <span class="cf">function</span>(d,</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>           <span class="at">x_0 =</span> <span class="dv">0</span>,</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>           <span class="at">y_0 =</span> <span class="dv">0</span>,</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>           <span class="at">n_grid =</span> <span class="dv">200</span>){</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>    <span class="co"># 1. Kernel density estimation</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>    fhat <span class="ot">&lt;-</span> <span class="fu">kde</span>(d, <span class="at">gridsize =</span> <span class="fu">c</span>(n_grid, n_grid))</span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>    xseq <span class="ot">&lt;-</span> fhat<span class="sc">$</span>eval.points[[<span class="dv">1</span>]]</span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>    yseq <span class="ot">&lt;-</span> fhat<span class="sc">$</span>eval.points[[<span class="dv">2</span>]]</span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>    zmat <span class="ot">&lt;-</span> fhat<span class="sc">$</span>estimate</span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a>    dx <span class="ot">&lt;-</span> <span class="fu">diff</span>(xseq)[<span class="dv">1</span>]</span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>    dy <span class="ot">&lt;-</span> <span class="fu">diff</span>(yseq)[<span class="dv">1</span>]</span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a>    cell_area <span class="ot">&lt;-</span> dx <span class="sc">*</span> dy</span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a>    <span class="co"># 2. Compute cumulative probability distribution to determine HDR thresholds</span></span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a>    dens_vec <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(zmat)</span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a>    dens_sorted <span class="ot">&lt;-</span> <span class="fu">sort</span>(dens_vec, <span class="at">decreasing =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a>    cumulative_mass <span class="ot">&lt;-</span> <span class="fu">cumsum</span>(dens_sorted <span class="sc">*</span> cell_area)</span>
+<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a>    cumulative_mass <span class="ot">&lt;-</span></span>
+<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a>      cumulative_mass <span class="sc">/</span> <span class="fu">max</span>(cumulative_mass)  <span class="co"># normalize</span></span>
+<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a>    <span class="co"># 3. Evaluate density at the given point (x_0, y_0)</span></span>
+<span id="cb7-30"><a href="#cb7-30" aria-hidden="true" tabindex="-1"></a>    f_point <span class="ot">&lt;-</span> <span class="fu">predict</span>(fhat, <span class="at">x =</span> <span class="fu">cbind</span>(x_0, y_0))</span>
+<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Find where f_point fits in the density distribution</span></span>
+<span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Identify the position of f_point in the sorted densities</span></span>
+<span id="cb7-34"><a href="#cb7-34" aria-hidden="true" tabindex="-1"></a>    idx <span class="ot">&lt;-</span> <span class="fu">which</span>(dens_sorted <span class="sc">&lt;</span> f_point)[<span class="dv">1</span>]</span>
+<span id="cb7-35"><a href="#cb7-35" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb7-36"><a href="#cb7-36" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">is.na</span>(idx)) {</span>
+<span id="cb7-37"><a href="#cb7-37" aria-hidden="true" tabindex="-1"></a>      <span class="co"># f_point is &gt;= all densities, alpha_hdr ~ 1</span></span>
+<span id="cb7-38"><a href="#cb7-38" aria-hidden="true" tabindex="-1"></a>      alpha_hdr <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb7-39"><a href="#cb7-39" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {</span>
+<span id="cb7-40"><a href="#cb7-40" aria-hidden="true" tabindex="-1"></a>      <span class="co"># f_point lies between dens_sorted[idx-1] and dens_sorted[idx]</span></span>
+<span id="cb7-41"><a href="#cb7-41" aria-hidden="true" tabindex="-1"></a>      <span class="co"># if idx &gt; 1, cumulative_mass[idx-1] gives us a close approximation</span></span>
+<span id="cb7-42"><a href="#cb7-42" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (idx <span class="sc">&gt;</span> <span class="dv">1</span>) {</span>
+<span id="cb7-43"><a href="#cb7-43" aria-hidden="true" tabindex="-1"></a>        alpha_hdr <span class="ot">&lt;-</span> cumulative_mass[idx <span class="sc">-</span> <span class="dv">1</span>]</span>
+<span id="cb7-44"><a href="#cb7-44" aria-hidden="true" tabindex="-1"></a>      } <span class="cf">else</span> {</span>
+<span id="cb7-45"><a href="#cb7-45" aria-hidden="true" tabindex="-1"></a>        <span class="co"># idx = 1 means f_point &lt; dens_sorted[1], so alpha is slightly less than cumulative_mass[1]</span></span>
+<span id="cb7-46"><a href="#cb7-46" aria-hidden="true" tabindex="-1"></a>        alpha_hdr <span class="ot">&lt;-</span> cumulative_mass[<span class="dv">1</span>]</span>
+<span id="cb7-47"><a href="#cb7-47" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb7-48"><a href="#cb7-48" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb7-49"><a href="#cb7-49" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb7-50"><a href="#cb7-50" aria-hidden="true" tabindex="-1"></a>    <span class="fu">return</span>(<span class="fu">round</span>(alpha_hdr <span class="sc">*</span> <span class="dv">100</span>, <span class="dv">1</span>))</span>
+<span id="cb7-51"><a href="#cb7-51" aria-hidden="true" tabindex="-1"></a>  }</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>We then use this function along other ones</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Helper function for linear stats</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>compute_linear_stats <span class="ot">&lt;-</span> <span class="cf">function</span>(data, variable) {</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tibble</span>(</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean =</span> <span class="fu">mean</span>(data[[variable]], <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">median =</span> <span class="fu">median</span>(data[[variable]], <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">ci_width =</span> <span class="fu">quantile</span>(data[[variable]], <span class="fl">0.975</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">quantile</span>(data[[variable]], <span class="fl">0.025</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">rename_with</span>(<span class="sc">~</span> <span class="fu">paste0</span>(variable, <span class="st">"_"</span>, .))</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Helper function for circular stats</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>compute_circular_stats <span class="ot">&lt;-</span> <span class="cf">function</span>(data, variable) {</span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tibble</span>(</span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>    <span class="at">circ_mean =</span> (<span class="fu">mean.circular</span>(data[[variable]]) <span class="sc">%%</span> (<span class="dv">2</span> <span class="sc">*</span> pi)) <span class="sc">%&gt;%</span> <span class="fu">as.numeric</span>(),</span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>    <span class="at">circ_median =</span> (<span class="fu">median.circular</span>(data[[variable]]) <span class="sc">%%</span> (<span class="dv">2</span> <span class="sc">*</span> pi)) <span class="sc">%&gt;%</span> <span class="fu">as.numeric</span>(),</span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>    <span class="at">circ_ci_width =</span> (</span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>      (<span class="fu">quantile.circular</span>(data[[variable]], <span class="fl">0.975</span>) <span class="sc">-</span> <span class="fu">quantile.circular</span>(data[[variable]], <span class="fl">0.025</span>)) <span class="sc">%%</span> (<span class="dv">2</span> <span class="sc">*</span> pi)</span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">%&gt;%</span> <span class="fu">as.numeric</span>()</span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>    <span class="fu">rename_with</span>(<span class="sc">~</span> <span class="fu">paste0</span>(variable, <span class="st">"_"</span>, .))</span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a><span class="co"># Apply calculations for all variables</span></span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a>ests_level1 <span class="ot">&lt;-</span> d_draws <span class="sc">%&gt;%</span></span>
+<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Change this to group_by(iteration) for level1.5</span></span>
+<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(id) <span class="sc">%&gt;%</span></span>
+<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
+<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a>    <span class="fu">bind_cols</span>(</span>
+<span id="cb8-29"><a href="#cb8-29" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Linear calculations</span></span>
+<span id="cb8-30"><a href="#cb8-30" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"mesor"</span>),</span>
+<span id="cb8-31"><a href="#cb8-31" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"si"</span>),</span>
+<span id="cb8-32"><a href="#cb8-32" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"co"</span>),</span>
+<span id="cb8-33"><a href="#cb8-33" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"amp"</span>),</span>
+<span id="cb8-34"><a href="#cb8-34" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"logsigma"</span>),</span>
+<span id="cb8-35"><a href="#cb8-35" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"sigma"</span>),</span>
+<span id="cb8-36"><a href="#cb8-36" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"sigma2"</span>),</span>
+<span id="cb8-37"><a href="#cb8-37" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"phi"</span>),</span>
+<span id="cb8-38"><a href="#cb8-38" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"phi.begins6"</span>),</span>
+<span id="cb8-39"><a href="#cb8-39" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_linear_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"phi.begins12"</span>),</span>
+<span id="cb8-40"><a href="#cb8-40" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Circular calculations</span></span>
+<span id="cb8-41"><a href="#cb8-41" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_circular_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"phi"</span>),</span>
+<span id="cb8-42"><a href="#cb8-42" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_circular_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"phi.begins6"</span>),</span>
+<span id="cb8-43"><a href="#cb8-43" aria-hidden="true" tabindex="-1"></a>      <span class="fu">compute_circular_stats</span>(<span class="fu">cur_data</span>(), <span class="st">"phi.begins12"</span>)</span>
+<span id="cb8-44"><a href="#cb8-44" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb8-45"><a href="#cb8-45" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Compute amp_hdr using compute_alpha_hdr</span></span>
+<span id="cb8-46"><a href="#cb8-46" aria-hidden="true" tabindex="-1"></a>    <span class="at">amp_hdr =</span> <span class="fu">compute_alpha_hdr</span>(<span class="fu">cbind</span>(<span class="fu">cur_data</span>()<span class="sc">$</span>co, <span class="fu">cur_data</span>()<span class="sc">$</span>si))</span>
+<span id="cb8-47"><a href="#cb8-47" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb8-48"><a href="#cb8-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">relocate</span>(amp_hdr, <span class="at">.before =</span> logsigma_mean)</span>
+<span id="cb8-49"><a href="#cb8-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-50"><a href="#cb8-50" aria-hidden="true" tabindex="-1"></a>ests_level1 <span class="sc">%&gt;%</span></span>
+<span id="cb8-51"><a href="#cb8-51" aria-hidden="true" tabindex="-1"></a>  <span class="fu">full_join</span>(d_bl, <span class="at">by =</span> <span class="st">"id"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb8-52"><a href="#cb8-52" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cbind</span>(<span class="at">item =</span> item_, .) <span class="sc">%&gt;%</span></span>
+<span id="cb8-53"><a href="#cb8-53" aria-hidden="true" tabindex="-1"></a>  <span class="fu">saveRDS</span>(</span>
+<span id="cb8-54"><a href="#cb8-54" aria-hidden="true" tabindex="-1"></a>    <span class="fu">here</span>(<span class="st">"fits"</span>,</span>
+<span id="cb8-55"><a href="#cb8-55" aria-hidden="true" tabindex="-1"></a>         <span class="fu">paste0</span>(<span class="st">"ests_level1_"</span>, item_, <span class="st">"_random_var.rds"</span>))</span>
+<span id="cb8-56"><a href="#cb8-56" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb8-57"><a href="#cb8-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-58"><a href="#cb8-58" aria-hidden="true" tabindex="-1"></a>beepr<span class="sc">::</span><span class="fu">beep</span>(<span class="dv">10</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
 <section id="level-2-estimates" class="level3">
 <h3 class="anchored" data-anchor-id="level-2-estimates">Level-2 estimates</h3>
-<p>Importantly, we want to estimate linear and correlations between mesor, amplitude, and residual variance across individuals for each sample.</p>
+<p>Importantly, we want to estimate linear and correlations between MESOR, amplitude, and residual variance across individuals for each sample.</p>
 <p>To do so, we need to first define a function to calculate Mardia’s circular-linear rank correlation:</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Mardia circular-linear rank correlation</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>cor_mardia <span class="ot">&lt;-</span> <span class="cf">function</span>(theta, x) {</span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Remove NAs</span></span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  valid <span class="ot">&lt;-</span> <span class="fu">complete.cases</span>(theta, x)</span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  theta <span class="ot">&lt;-</span> theta[valid]</span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>  x <span class="ot">&lt;-</span> x[valid]</span>
-<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>  n <span class="ot">&lt;-</span> <span class="fu">length</span>(theta)</span>
-<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (n <span class="sc">==</span> <span class="dv">0</span>) <span class="fu">stop</span>(<span class="st">"No valid data after removing NAs."</span>)</span>
-<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>  </span>
-<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Rank and compute theta star</span></span>
-<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>  r_theta <span class="ot">&lt;-</span> <span class="fu">rank</span>(theta, <span class="at">ties.method =</span> <span class="st">"average"</span>)</span>
-<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>  r_x <span class="ot">&lt;-</span> <span class="fu">rank</span>(x, <span class="at">ties.method =</span> <span class="st">"average"</span>)</span>
-<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>  r_theta_star <span class="ot">&lt;-</span> r_theta <span class="sc">*</span> <span class="dv">2</span> <span class="sc">*</span> pi <span class="sc">/</span> n</span>
-<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>  </span>
-<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Precompute sine and cosine</span></span>
-<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>  cos_theta_star <span class="ot">&lt;-</span> <span class="fu">cos</span>(r_theta_star)</span>
-<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>  sin_theta_star <span class="ot">&lt;-</span> <span class="fu">sin</span>(r_theta_star)</span>
-<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>  </span>
-<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Compute T_c and T_s</span></span>
-<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>  T_c <span class="ot">&lt;-</span> <span class="fu">sum</span>(r_x <span class="sc">*</span> cos_theta_star)</span>
-<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>  T_s <span class="ot">&lt;-</span> <span class="fu">sum</span>(r_x <span class="sc">*</span> sin_theta_star)</span>
-<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a>  </span>
-<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Calculate coefficient 'a'</span></span>
-<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a>  a <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(</span>
-<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a>    n <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">0</span>,</span>
-<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a>    <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="dv">5</span> <span class="sc">/</span> <span class="fu">tan</span>(pi <span class="sc">/</span> n)<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> <span class="dv">4</span> <span class="sc">/</span> <span class="fu">tan</span>(pi <span class="sc">/</span> n)<span class="sc">^</span><span class="dv">4</span>),</span>
-<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a>    <span class="dv">2</span> <span class="sc">*</span> <span class="fu">sin</span>(pi <span class="sc">/</span> n)<span class="sc">^</span><span class="dv">4</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">cos</span>(pi <span class="sc">/</span> n))<span class="sc">^</span><span class="dv">3</span></span>
-<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb8-29"><a href="#cb8-29" aria-hidden="true" tabindex="-1"></a>  </span>
-<span id="cb8-30"><a href="#cb8-30" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Final D value (rank correlation, values between 0 and 1)</span></span>
-<span id="cb8-31"><a href="#cb8-31" aria-hidden="true" tabindex="-1"></a>  D <span class="ot">&lt;-</span> a <span class="sc">*</span> (T_c<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> T_s<span class="sc">^</span><span class="dv">2</span>)</span>
-<span id="cb8-32"><a href="#cb8-32" aria-hidden="true" tabindex="-1"></a>  </span>
-<span id="cb8-33"><a href="#cb8-33" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Calculate U_n and p-value</span></span>
-<span id="cb8-34"><a href="#cb8-34" aria-hidden="true" tabindex="-1"></a>  U_n <span class="ot">&lt;-</span> <span class="dv">24</span> <span class="sc">*</span> (T_c<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> T_s<span class="sc">^</span><span class="dv">2</span>) <span class="sc">/</span> (n<span class="sc">^</span><span class="dv">2</span> <span class="sc">*</span> (n <span class="sc">+</span> <span class="dv">1</span>))</span>
-<span id="cb8-35"><a href="#cb8-35" aria-hidden="true" tabindex="-1"></a>  p.value <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">-</span> <span class="fu">pchisq</span>(U_n, <span class="at">df =</span> <span class="dv">2</span>)</span>
-<span id="cb8-36"><a href="#cb8-36" aria-hidden="true" tabindex="-1"></a>  </span>
-<span id="cb8-37"><a href="#cb8-37" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Return results as a list</span></span>
-<span id="cb8-38"><a href="#cb8-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(<span class="fu">list</span>(<span class="at">estimate =</span> D, <span class="at">p.value =</span> p.value, <span class="at">U_n =</span> U_n))</span>
-<span id="cb8-39"><a href="#cb8-39" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Mardia circular-linear rank correlation</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>cor_mardia <span class="ot">&lt;-</span> <span class="cf">function</span>(theta, x) {</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Remove NAs</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  valid <span class="ot">&lt;-</span> <span class="fu">complete.cases</span>(theta, x)</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  theta <span class="ot">&lt;-</span> theta[valid]</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>  x <span class="ot">&lt;-</span> x[valid]</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  n <span class="ot">&lt;-</span> <span class="fu">length</span>(theta)</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (n <span class="sc">==</span> <span class="dv">0</span>) <span class="fu">stop</span>(<span class="st">"No valid data after removing NAs."</span>)</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Rank and compute theta star</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>  r_theta <span class="ot">&lt;-</span> <span class="fu">rank</span>(theta, <span class="at">ties.method =</span> <span class="st">"average"</span>)</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>  r_x <span class="ot">&lt;-</span> <span class="fu">rank</span>(x, <span class="at">ties.method =</span> <span class="st">"average"</span>)</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>  r_theta_star <span class="ot">&lt;-</span> r_theta <span class="sc">*</span> <span class="dv">2</span> <span class="sc">*</span> pi <span class="sc">/</span> n</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Precompute sine and cosine</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>  cos_theta_star <span class="ot">&lt;-</span> <span class="fu">cos</span>(r_theta_star)</span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>  sin_theta_star <span class="ot">&lt;-</span> <span class="fu">sin</span>(r_theta_star)</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Compute T_c and T_s</span></span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>  T_c <span class="ot">&lt;-</span> <span class="fu">sum</span>(r_x <span class="sc">*</span> cos_theta_star)</span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>  T_s <span class="ot">&lt;-</span> <span class="fu">sum</span>(r_x <span class="sc">*</span> sin_theta_star)</span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Calculate coefficient 'a'</span></span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>  a <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(</span>
+<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>    n <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">0</span>,</span>
+<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a>    <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="dv">5</span> <span class="sc">/</span> <span class="fu">tan</span>(pi <span class="sc">/</span> n)<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> <span class="dv">4</span> <span class="sc">/</span> <span class="fu">tan</span>(pi <span class="sc">/</span> n)<span class="sc">^</span><span class="dv">4</span>),</span>
+<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a>    <span class="dv">2</span> <span class="sc">*</span> <span class="fu">sin</span>(pi <span class="sc">/</span> n)<span class="sc">^</span><span class="dv">4</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">cos</span>(pi <span class="sc">/</span> n))<span class="sc">^</span><span class="dv">3</span></span>
+<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Final D value (rank correlation, values between 0 and 1)</span></span>
+<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a>  D <span class="ot">&lt;-</span> a <span class="sc">*</span> (T_c<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> T_s<span class="sc">^</span><span class="dv">2</span>)</span>
+<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Calculate U_n and p-value</span></span>
+<span id="cb9-34"><a href="#cb9-34" aria-hidden="true" tabindex="-1"></a>  U_n <span class="ot">&lt;-</span> <span class="dv">24</span> <span class="sc">*</span> (T_c<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> T_s<span class="sc">^</span><span class="dv">2</span>) <span class="sc">/</span> (n<span class="sc">^</span><span class="dv">2</span> <span class="sc">*</span> (n <span class="sc">+</span> <span class="dv">1</span>))</span>
+<span id="cb9-35"><a href="#cb9-35" aria-hidden="true" tabindex="-1"></a>  p.value <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">-</span> <span class="fu">pchisq</span>(U_n, <span class="at">df =</span> <span class="dv">2</span>)</span>
+<span id="cb9-36"><a href="#cb9-36" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb9-37"><a href="#cb9-37" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Return results as a list</span></span>
+<span id="cb9-38"><a href="#cb9-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(<span class="fu">list</span>(<span class="at">estimate =</span> D, <span class="at">p.value =</span> p.value, <span class="at">U_n =</span> U_n))</span>
+<span id="cb9-39"><a href="#cb9-39" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>To make the code cleaner, we use a helper function that, for correlations where <span class="math inline">\(\phi\)</span> is involved, calculates various correlations (Pearson’s, Spearman’s rank, Kendall’s rank, as well as Johnson-Wehrly-Mardia, and Mardia’s rank) for us:</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Create correlation function with linear and circular methods</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>compute_correlations <span class="ot">&lt;-</span> <span class="cf">function</span>(x, y) {</span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  </span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Removing NA pairs</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  z <span class="ot">&lt;-</span> <span class="fu">cbind</span>(x, y) <span class="sc">%&gt;%</span> <span class="fu">na.omit</span>()</span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>  x <span class="ot">&lt;-</span> z[,<span class="dv">1</span>]</span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  y <span class="ot">&lt;-</span> z[,<span class="dv">2</span>]</span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>  </span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>  <span class="do">## x is a circular variable, y is a linear variable</span></span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>  cor_mardia <span class="ot">&lt;-</span> <span class="fu">cor_mardia</span>(x, y)</span>
-<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>  </span>
-<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tibble</span>(</span>
-<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>    <span class="do">## Linear correlations</span></span>
-<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Pearson's</span></span>
-<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>    <span class="at">pearson_cor =</span> <span class="fu">cor</span>(x, y),</span>
-<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>    <span class="at">pearson_pval =</span> <span class="fu">cor.test</span>(x, y)<span class="sc">$</span>p.value,</span>
-<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Spearman's</span></span>
-<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">spearman_cor =</span> <span class="fu">cor</span>(x, y, <span class="at">method =</span> <span class="st">"spearman"</span>),</span>
-<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">spearman_pval =</span> <span class="fu">cor.test</span>(x, y, <span class="at">method =</span> <span class="st">"spearman"</span>)<span class="sc">$</span>p.value,<span class="co"># Kendall's tau</span></span>
-<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">kendall_cor =</span> <span class="fu">cor</span>(x, y, <span class="at">method =</span> <span class="st">"kendall"</span>),</span>
-<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>    <span class="at">kendall_pval =</span> <span class="fu">cor.test</span>(x, y, <span class="at">method =</span> <span class="st">"kendall"</span>)<span class="sc">$</span>p.value,</span>
-<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>    <span class="do">## Circular correlations</span></span>
-<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Johnson-Wehrly-Mardia correlation (sinusoidal assumption)</span></span>
-<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>    <span class="at">jwm_cor =</span> <span class="fu">tryCatch</span>(</span>
-<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>      <span class="fu">circlin.cor</span>(x, y)[<span class="dv">1</span>],</span>
-<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a>      <span class="at">error =</span> <span class="cf">function</span>(e)</span>
-<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a>        <span class="cn">NA_real_</span></span>
-<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a>    ),</span>
-<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a>    <span class="at">jwm_pval =</span> <span class="fu">tryCatch</span>(</span>
-<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a>      <span class="fu">circlin.cor</span>(x, y)[<span class="dv">2</span>],</span>
-<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a>      <span class="at">error =</span> <span class="cf">function</span>(e)</span>
-<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a>        <span class="cn">NA_real_</span></span>
-<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a>    ),</span>
-<span id="cb9-34"><a href="#cb9-34" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Mardia's rank correlation (no assumption)</span></span>
-<span id="cb9-35"><a href="#cb9-35" aria-hidden="true" tabindex="-1"></a>    <span class="at">mard_cor =</span> cor_mardia<span class="sc">$</span>estimate,</span>
-<span id="cb9-36"><a href="#cb9-36" aria-hidden="true" tabindex="-1"></a>    <span class="at">mard_pval =</span> cor_mardia<span class="sc">$</span>p.value</span>
-<span id="cb9-37"><a href="#cb9-37" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb9-38"><a href="#cb9-38" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Create correlation function with linear and circular methods</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>compute_correlations <span class="ot">&lt;-</span> <span class="cf">function</span>(x, y) {</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Removing NA pairs</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>  z <span class="ot">&lt;-</span> <span class="fu">cbind</span>(x, y) <span class="sc">%&gt;%</span> <span class="fu">na.omit</span>()</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>  x <span class="ot">&lt;-</span> z[,<span class="dv">1</span>]</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>  y <span class="ot">&lt;-</span> z[,<span class="dv">2</span>]</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>  <span class="do">## x is a circular variable, y is a linear variable</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>  cor_mardia <span class="ot">&lt;-</span> <span class="fu">cor_mardia</span>(x, y)</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tibble</span>(</span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>    <span class="do">## Linear correlations</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Pearson's</span></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>    <span class="at">pearson_cor =</span> <span class="fu">cor</span>(x, y),</span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>    <span class="at">pearson_pval =</span> <span class="fu">cor.test</span>(x, y)<span class="sc">$</span>p.value,</span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Spearman's</span></span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">spearman_cor =</span> <span class="fu">cor</span>(x, y, <span class="at">method =</span> <span class="st">"spearman"</span>),</span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">spearman_pval =</span> <span class="fu">cor.test</span>(x, y, <span class="at">method =</span> <span class="st">"spearman"</span>)<span class="sc">$</span>p.value,<span class="co"># Kendall's tau</span></span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">kendall_cor =</span> <span class="fu">cor</span>(x, y, <span class="at">method =</span> <span class="st">"kendall"</span>),</span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a>    <span class="at">kendall_pval =</span> <span class="fu">cor.test</span>(x, y, <span class="at">method =</span> <span class="st">"kendall"</span>)<span class="sc">$</span>p.value,</span>
+<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a>    <span class="do">## Circular correlations</span></span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Johnson-Wehrly-Mardia correlation (sinusoidal assumption)</span></span>
+<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a>    <span class="at">jwm_cor =</span> <span class="fu">tryCatch</span>(</span>
+<span id="cb10-25"><a href="#cb10-25" aria-hidden="true" tabindex="-1"></a>      <span class="fu">circlin.cor</span>(x, y)[<span class="dv">1</span>],</span>
+<span id="cb10-26"><a href="#cb10-26" aria-hidden="true" tabindex="-1"></a>      <span class="at">error =</span> <span class="cf">function</span>(e)</span>
+<span id="cb10-27"><a href="#cb10-27" aria-hidden="true" tabindex="-1"></a>        <span class="cn">NA_real_</span></span>
+<span id="cb10-28"><a href="#cb10-28" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb10-29"><a href="#cb10-29" aria-hidden="true" tabindex="-1"></a>    <span class="at">jwm_pval =</span> <span class="fu">tryCatch</span>(</span>
+<span id="cb10-30"><a href="#cb10-30" aria-hidden="true" tabindex="-1"></a>      <span class="fu">circlin.cor</span>(x, y)[<span class="dv">2</span>],</span>
+<span id="cb10-31"><a href="#cb10-31" aria-hidden="true" tabindex="-1"></a>      <span class="at">error =</span> <span class="cf">function</span>(e)</span>
+<span id="cb10-32"><a href="#cb10-32" aria-hidden="true" tabindex="-1"></a>        <span class="cn">NA_real_</span></span>
+<span id="cb10-33"><a href="#cb10-33" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb10-34"><a href="#cb10-34" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Mardia's rank correlation (no assumption)</span></span>
+<span id="cb10-35"><a href="#cb10-35" aria-hidden="true" tabindex="-1"></a>    <span class="at">mard_cor =</span> cor_mardia<span class="sc">$</span>estimate,</span>
+<span id="cb10-36"><a href="#cb10-36" aria-hidden="true" tabindex="-1"></a>    <span class="at">mard_pval =</span> cor_mardia<span class="sc">$</span>p.value</span>
+<span id="cb10-37"><a href="#cb10-37" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb10-38"><a href="#cb10-38" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>We then use the functions to do the calculations, make a long dataframe, and save it as an <code>.RDS</code> file:</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>d_draws <span class="ot">&lt;-</span> d_draws <span class="sc">%&gt;%</span></span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">full_join</span>(d_bl,</span>
-<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>            <span class="at">by =</span> <span class="st">"id"</span>)</span>
-<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Compute correlations for all combinations</span></span>
-<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>cors_lin_angle <span class="ot">&lt;-</span> d_draws <span class="sc">%&gt;%</span></span>
-<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(iteration) <span class="sc">%&gt;%</span></span>
-<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
-<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">crossing</span>(</span>
-<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>      <span class="at">linear_variable =</span> <span class="fu">c</span>(<span class="st">"mesor"</span>,</span>
-<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"log_sigma"</span>,</span>
-<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"sigma2"</span>,</span>
-<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"bl_pa"</span>,</span>
-<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"bl_na"</span>,</span>
-<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"amp"</span>),</span>
-<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>      <span class="at">circular_variable =</span> <span class="fu">c</span>(<span class="st">"phi"</span>, <span class="st">"phi.begins6"</span>, <span class="st">"phi.begins12"</span>)</span>
-<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">%&gt;%</span></span>
-<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a>      <span class="fu">mutate</span>(<span class="at">corr_data =</span> <span class="fu">map2</span>(</span>
-<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a>        <span class="at">.x =</span> <span class="fu">syms</span>(circular_variable),</span>
-<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a>        <span class="at">.y =</span> <span class="fu">syms</span>(linear_variable),</span>
-<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a>        <span class="at">.f =</span> <span class="sc">~</span> <span class="fu">compute_correlations</span>(<span class="fu">eval_tidy</span>(.x, <span class="at">data =</span> <span class="fu">cur_data</span>()),</span>
-<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a>                                    <span class="fu">eval_tidy</span>(.y, <span class="at">data =</span> <span class="fu">cur_data</span>()))</span>
-<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a>      )) <span class="sc">%&gt;%</span></span>
-<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a>      <span class="fu">unnest</span>(corr_data) <span class="sc">%&gt;%</span></span>
-<span id="cb10-25"><a href="#cb10-25" aria-hidden="true" tabindex="-1"></a>      <span class="fu">rename</span>(<span class="at">par2 =</span> circular_variable,</span>
-<span id="cb10-26"><a href="#cb10-26" aria-hidden="true" tabindex="-1"></a>             <span class="at">par1 =</span> linear_variable)</span>
-<span id="cb10-27"><a href="#cb10-27" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb10-28"><a href="#cb10-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">unnest</span>(<span class="at">cols =</span> <span class="fu">last_col</span>()) <span class="sc">%&gt;%</span></span>
-<span id="cb10-29"><a href="#cb10-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_longer</span>(<span class="sc">-</span><span class="dv">1</span><span class="sc">:-</span><span class="dv">3</span>,</span>
-<span id="cb10-30"><a href="#cb10-30" aria-hidden="true" tabindex="-1"></a>               <span class="at">names_to =</span> <span class="st">"cortypeXmeasure"</span>,</span>
-<span id="cb10-31"><a href="#cb10-31" aria-hidden="true" tabindex="-1"></a>               <span class="at">values_to =</span> <span class="st">"value"</span>)</span>
-<span id="cb10-32"><a href="#cb10-32" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb10-33"><a href="#cb10-33" aria-hidden="true" tabindex="-1"></a>beepr<span class="sc">::</span><span class="fu">beep</span>(<span class="dv">7</span>)</span>
-<span id="cb10-34"><a href="#cb10-34" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb10-35"><a href="#cb10-35" aria-hidden="true" tabindex="-1"></a>cors_lin_lin <span class="ot">&lt;-</span>  d_draws <span class="sc">%&gt;%</span></span>
-<span id="cb10-36"><a href="#cb10-36" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(iteration) <span class="sc">%&gt;%</span></span>
-<span id="cb10-37"><a href="#cb10-37" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
-<span id="cb10-38"><a href="#cb10-38" aria-hidden="true" tabindex="-1"></a>    <span class="at">pair_data =</span> <span class="fu">list</span>(</span>
-<span id="cb10-39"><a href="#cb10-39" aria-hidden="true" tabindex="-1"></a>      <span class="fu">c</span>(<span class="st">"mesor"</span>, <span class="st">"amp"</span>, <span class="st">"log_sigma"</span>, <span class="st">"sigma2"</span>, <span class="st">"bl_pa"</span>, <span class="st">"bl_na"</span>) <span class="sc">%&gt;%</span> </span>
-<span id="cb10-40"><a href="#cb10-40" aria-hidden="true" tabindex="-1"></a>        <span class="fu">combn</span>(<span class="dv">2</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb10-41"><a href="#cb10-41" aria-hidden="true" tabindex="-1"></a>        <span class="fu">t</span>() <span class="sc">%&gt;%</span></span>
-<span id="cb10-42"><a href="#cb10-42" aria-hidden="true" tabindex="-1"></a>        <span class="fu">as.data.frame</span>() <span class="sc">%&gt;%</span></span>
-<span id="cb10-43"><a href="#cb10-43" aria-hidden="true" tabindex="-1"></a>        <span class="fu">rename</span>(<span class="at">par1 =</span> V1, <span class="at">par2 =</span> V2) <span class="sc">%&gt;%</span> </span>
-<span id="cb10-44"><a href="#cb10-44" aria-hidden="true" tabindex="-1"></a>        <span class="fu">tibble</span>()</span>
-<span id="cb10-45"><a href="#cb10-45" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb10-46"><a href="#cb10-46" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb10-47"><a href="#cb10-47" aria-hidden="true" tabindex="-1"></a>  <span class="fu">unnest</span>(pair_data) <span class="sc">%&gt;%</span></span>
-<span id="cb10-48"><a href="#cb10-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb10-49"><a href="#cb10-49" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="fu">map</span>(par1, <span class="sc">~</span> <span class="fu">pull</span>(<span class="fu">filter</span>(d_draws, iteration <span class="sc">==</span> <span class="fu">cur_group_id</span>()), <span class="fu">all_of</span>(.))),</span>
-<span id="cb10-50"><a href="#cb10-50" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="fu">map</span>(par2, <span class="sc">~</span> <span class="fu">pull</span>(<span class="fu">filter</span>(d_draws, iteration <span class="sc">==</span> <span class="fu">cur_group_id</span>()), <span class="fu">all_of</span>(.))),</span>
-<span id="cb10-51"><a href="#cb10-51" aria-hidden="true" tabindex="-1"></a>    <span class="at">pearson_cor =</span> <span class="fu">map2_dbl</span>(x, y, <span class="sc">~</span> <span class="fu">cor</span>(.x, .y, <span class="at">use =</span> <span class="st">"complete.obs"</span>)),</span>
-<span id="cb10-52"><a href="#cb10-52" aria-hidden="true" tabindex="-1"></a>    <span class="at">pearson_pval =</span> <span class="fu">map2_dbl</span>(x, y, <span class="sc">~</span> <span class="fu">cor.test</span>(.x, .y)<span class="sc">$</span>p.value),</span>
-<span id="cb10-53"><a href="#cb10-53" aria-hidden="true" tabindex="-1"></a>    <span class="at">spearman_cor =</span> <span class="fu">map2_dbl</span>(x, y, <span class="sc">~</span> <span class="fu">cor</span>(.x, .y, <span class="at">use =</span> <span class="st">"complete.obs"</span>, <span class="at">method =</span> <span class="st">"spearman"</span>)),</span>
-<span id="cb10-54"><a href="#cb10-54" aria-hidden="true" tabindex="-1"></a>    <span class="at">spearman_pval =</span> <span class="fu">map2_dbl</span>(x, y, <span class="sc">~</span> <span class="fu">cor.test</span>(.x, .y)<span class="sc">$</span>p.value, <span class="at">method =</span> <span class="st">"spearman"</span>),</span>
-<span id="cb10-55"><a href="#cb10-55" aria-hidden="true" tabindex="-1"></a>    <span class="at">kendall_cor =</span> <span class="fu">map2_dbl</span>(x, y, <span class="sc">~</span> <span class="fu">cor</span>(.x, .y, <span class="at">use =</span> <span class="st">"complete.obs"</span>, <span class="at">method =</span> <span class="st">"kendall"</span>)),</span>
-<span id="cb10-56"><a href="#cb10-56" aria-hidden="true" tabindex="-1"></a>    <span class="at">kendall_pval =</span> <span class="fu">map2_dbl</span>(x, y, <span class="sc">~</span> <span class="fu">cor.test</span>(.x, .y)<span class="sc">$</span>p.value, <span class="at">method =</span> <span class="st">"kendall"</span>)</span>
-<span id="cb10-57"><a href="#cb10-57" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb10-58"><a href="#cb10-58" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="sc">-</span>x, <span class="sc">-</span>y) <span class="sc">%&gt;%</span></span>
-<span id="cb10-59"><a href="#cb10-59" aria-hidden="true" tabindex="-1"></a>  <span class="fu">unnest</span>(<span class="at">cols =</span> <span class="fu">last_col</span>()) <span class="sc">%&gt;%</span></span>
-<span id="cb10-60"><a href="#cb10-60" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_longer</span>(<span class="sc">-</span><span class="dv">1</span><span class="sc">:-</span><span class="dv">3</span>,</span>
-<span id="cb10-61"><a href="#cb10-61" aria-hidden="true" tabindex="-1"></a>               <span class="at">names_to =</span> <span class="st">"cortypeXmeasure"</span>,</span>
-<span id="cb10-62"><a href="#cb10-62" aria-hidden="true" tabindex="-1"></a>               <span class="at">values_to =</span> <span class="st">"value"</span>)</span>
-<span id="cb10-63"><a href="#cb10-63" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb10-64"><a href="#cb10-64" aria-hidden="true" tabindex="-1"></a>ests_level2 <span class="ot">&lt;-</span> cors_lin_angle <span class="sc">%&gt;%</span></span>
-<span id="cb10-65"><a href="#cb10-65" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rbind</span>(cors_lin_lin) <span class="sc">%&gt;%</span></span>
-<span id="cb10-66"><a href="#cb10-66" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(cortypeXmeasure) <span class="sc">%&gt;%</span></span>
-<span id="cb10-67"><a href="#cb10-67" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb10-68"><a href="#cb10-68" aria-hidden="true" tabindex="-1"></a>    <span class="at">correlation_type =</span> <span class="fu">str_split</span>(cortypeXmeasure, <span class="st">"_"</span>)[[<span class="dv">1</span>]][<span class="dv">1</span>],</span>
-<span id="cb10-69"><a href="#cb10-69" aria-hidden="true" tabindex="-1"></a>    <span class="at">measure =</span> <span class="fu">str_split</span>(cortypeXmeasure, <span class="st">"_"</span>)[[<span class="dv">1</span>]][<span class="dv">2</span>],</span>
-<span id="cb10-70"><a href="#cb10-70" aria-hidden="true" tabindex="-1"></a>    <span class="at">.before =</span> value</span>
-<span id="cb10-71"><a href="#cb10-71" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb10-72"><a href="#cb10-72" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ungroup</span>() <span class="sc">%&gt;%</span></span>
-<span id="cb10-73"><a href="#cb10-73" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">what =</span> <span class="fu">paste</span>(par1, correlation_type, par2, <span class="at">sep =</span> <span class="st">"_"</span>),</span>
-<span id="cb10-74"><a href="#cb10-74" aria-hidden="true" tabindex="-1"></a>         <span class="at">.after =</span> correlation_type) <span class="sc">%&gt;%</span></span>
-<span id="cb10-75"><a href="#cb10-75" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="sc">-</span>cortypeXmeasure)</span>
-<span id="cb10-76"><a href="#cb10-76" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb10-77"><a href="#cb10-77" aria-hidden="true" tabindex="-1"></a>beepr<span class="sc">::</span><span class="fu">beep</span>(<span class="dv">9</span>)</span>
-<span id="cb10-78"><a href="#cb10-78" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb10-79"><a href="#cb10-79" aria-hidden="true" tabindex="-1"></a>ests_level2 <span class="sc">%&gt;%</span></span>
-<span id="cb10-80"><a href="#cb10-80" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cbind</span>(<span class="at">item =</span> item_, .) <span class="sc">%&gt;%</span> </span>
-<span id="cb10-81"><a href="#cb10-81" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(<span class="fu">here</span>(<span class="st">"fits"</span>,</span>
-<span id="cb10-82"><a href="#cb10-82" aria-hidden="true" tabindex="-1"></a>             <span class="fu">paste0</span>(<span class="st">"ests_level2_"</span>,</span>
-<span id="cb10-83"><a href="#cb10-83" aria-hidden="true" tabindex="-1"></a>                    item_,</span>
-<span id="cb10-84"><a href="#cb10-84" aria-hidden="true" tabindex="-1"></a>                    <span class="st">"_random_var.rds"</span>)</span>
-<span id="cb10-85"><a href="#cb10-85" aria-hidden="true" tabindex="-1"></a>             )</span>
-<span id="cb10-86"><a href="#cb10-86" aria-hidden="true" tabindex="-1"></a>        )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Add baseline bl_pa and bl_na to d_draws if not added yet</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span>(<span class="fu">sum</span>(<span class="fu">c</span>(<span class="st">"bl_pa"</span>, <span class="st">"bl_na"</span>) <span class="sc">%in%</span> <span class="fu">names</span>(d_draws)) <span class="sc">==</span> <span class="cn">FALSE</span>)</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>  d_draws <span class="ot">&lt;-</span> d_draws <span class="sc">%&gt;%</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">full_join</span>(d_bl,</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>              <span class="at">by =</span> <span class="st">"id"</span>)</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Compute correlations for all combinations</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>cors_lin_angle <span class="ot">&lt;-</span> d_draws <span class="sc">%&gt;%</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(iteration) <span class="sc">%&gt;%</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">crossing</span>(</span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>      <span class="at">linear_variable =</span> <span class="fu">c</span>(<span class="st">"mesor"</span>,</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"logsigma"</span>,</span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"sigma"</span>,</span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"sigma2"</span>,</span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"bl_pa"</span>,</span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"bl_na"</span>,</span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"amp"</span>),</span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>      <span class="at">circular_variable =</span> <span class="fu">c</span>(<span class="st">"phi"</span>, <span class="st">"phi.begins6"</span>, <span class="st">"phi.begins12"</span>)</span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">%&gt;%</span></span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>      <span class="fu">mutate</span>(<span class="at">corr_data =</span> <span class="fu">map2</span>(</span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>        <span class="at">.x =</span> <span class="fu">syms</span>(circular_variable),</span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>        <span class="at">.y =</span> <span class="fu">syms</span>(linear_variable),</span>
+<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a>        <span class="at">.f =</span> <span class="sc">~</span> <span class="fu">compute_correlations</span>(<span class="fu">eval_tidy</span>(.x, <span class="at">data =</span> <span class="fu">cur_data</span>()),</span>
+<span id="cb11-25"><a href="#cb11-25" aria-hidden="true" tabindex="-1"></a>                                    <span class="fu">eval_tidy</span>(.y, <span class="at">data =</span> <span class="fu">cur_data</span>()))</span>
+<span id="cb11-26"><a href="#cb11-26" aria-hidden="true" tabindex="-1"></a>      )) <span class="sc">%&gt;%</span></span>
+<span id="cb11-27"><a href="#cb11-27" aria-hidden="true" tabindex="-1"></a>      <span class="fu">unnest</span>(corr_data) <span class="sc">%&gt;%</span></span>
+<span id="cb11-28"><a href="#cb11-28" aria-hidden="true" tabindex="-1"></a>      <span class="fu">rename</span>(<span class="at">par2 =</span> circular_variable,</span>
+<span id="cb11-29"><a href="#cb11-29" aria-hidden="true" tabindex="-1"></a>             <span class="at">par1 =</span> linear_variable)</span>
+<span id="cb11-30"><a href="#cb11-30" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb11-31"><a href="#cb11-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">unnest</span>(<span class="at">cols =</span> <span class="fu">last_col</span>()) <span class="sc">%&gt;%</span></span>
+<span id="cb11-32"><a href="#cb11-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_longer</span>(<span class="sc">-</span><span class="dv">1</span><span class="sc">:-</span><span class="dv">3</span>,</span>
+<span id="cb11-33"><a href="#cb11-33" aria-hidden="true" tabindex="-1"></a>               <span class="at">names_to =</span> <span class="st">"cortypeXmeasure"</span>,</span>
+<span id="cb11-34"><a href="#cb11-34" aria-hidden="true" tabindex="-1"></a>               <span class="at">values_to =</span> <span class="st">"value"</span>)</span>
+<span id="cb11-35"><a href="#cb11-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-36"><a href="#cb11-36" aria-hidden="true" tabindex="-1"></a>beepr<span class="sc">::</span><span class="fu">beep</span>(<span class="dv">7</span>)</span>
+<span id="cb11-37"><a href="#cb11-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-38"><a href="#cb11-38" aria-hidden="true" tabindex="-1"></a>cors_lin_lin <span class="ot">&lt;-</span>  d_draws <span class="sc">%&gt;%</span></span>
+<span id="cb11-39"><a href="#cb11-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(iteration) <span class="sc">%&gt;%</span></span>
+<span id="cb11-40"><a href="#cb11-40" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
+<span id="cb11-41"><a href="#cb11-41" aria-hidden="true" tabindex="-1"></a>    <span class="at">pair_data =</span> <span class="fu">list</span>(</span>
+<span id="cb11-42"><a href="#cb11-42" aria-hidden="true" tabindex="-1"></a>      <span class="fu">c</span>(<span class="st">"mesor"</span>, <span class="st">"amp"</span>, <span class="st">"logsigma"</span>, <span class="st">"sigma"</span>, <span class="st">"sigma2"</span>, <span class="st">"bl_pa"</span>, <span class="st">"bl_na"</span>) <span class="sc">%&gt;%</span> </span>
+<span id="cb11-43"><a href="#cb11-43" aria-hidden="true" tabindex="-1"></a>        <span class="fu">combn</span>(<span class="dv">2</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb11-44"><a href="#cb11-44" aria-hidden="true" tabindex="-1"></a>        <span class="fu">t</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb11-45"><a href="#cb11-45" aria-hidden="true" tabindex="-1"></a>        <span class="fu">as.data.frame</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb11-46"><a href="#cb11-46" aria-hidden="true" tabindex="-1"></a>        <span class="fu">rename</span>(<span class="at">par1 =</span> V1, <span class="at">par2 =</span> V2) <span class="sc">%&gt;%</span> </span>
+<span id="cb11-47"><a href="#cb11-47" aria-hidden="true" tabindex="-1"></a>        <span class="fu">tibble</span>()</span>
+<span id="cb11-48"><a href="#cb11-48" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb11-49"><a href="#cb11-49" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb11-50"><a href="#cb11-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">unnest</span>(pair_data) <span class="sc">%&gt;%</span></span>
+<span id="cb11-51"><a href="#cb11-51" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb11-52"><a href="#cb11-52" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="fu">map</span>(par1, <span class="sc">~</span> <span class="fu">pull</span>(<span class="fu">filter</span>(d_draws, iteration <span class="sc">==</span> <span class="fu">cur_group_id</span>()), <span class="fu">all_of</span>(.))),</span>
+<span id="cb11-53"><a href="#cb11-53" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="fu">map</span>(par2, <span class="sc">~</span> <span class="fu">pull</span>(<span class="fu">filter</span>(d_draws, iteration <span class="sc">==</span> <span class="fu">cur_group_id</span>()), <span class="fu">all_of</span>(.))),</span>
+<span id="cb11-54"><a href="#cb11-54" aria-hidden="true" tabindex="-1"></a>    <span class="at">pearson_cor =</span> <span class="fu">map2_dbl</span>(x, y, <span class="sc">~</span> <span class="fu">cor</span>(.x, .y, <span class="at">use =</span> <span class="st">"complete.obs"</span>)),</span>
+<span id="cb11-55"><a href="#cb11-55" aria-hidden="true" tabindex="-1"></a>    <span class="at">pearson_pval =</span> <span class="fu">map2_dbl</span>(x, y, <span class="sc">~</span> <span class="fu">cor.test</span>(.x, .y)<span class="sc">$</span>p.value),</span>
+<span id="cb11-56"><a href="#cb11-56" aria-hidden="true" tabindex="-1"></a>    <span class="at">spearman_cor =</span> <span class="fu">map2_dbl</span>(x, y, <span class="sc">~</span> <span class="fu">cor</span>(.x, .y, <span class="at">use =</span> <span class="st">"complete.obs"</span>, <span class="at">method =</span> <span class="st">"spearman"</span>)),</span>
+<span id="cb11-57"><a href="#cb11-57" aria-hidden="true" tabindex="-1"></a>    <span class="at">spearman_pval =</span> <span class="fu">map2_dbl</span>(x, y, <span class="sc">~</span> <span class="fu">cor.test</span>(.x, .y)<span class="sc">$</span>p.value, <span class="at">method =</span> <span class="st">"spearman"</span>),</span>
+<span id="cb11-58"><a href="#cb11-58" aria-hidden="true" tabindex="-1"></a>    <span class="at">kendall_cor =</span> <span class="fu">map2_dbl</span>(x, y, <span class="sc">~</span> <span class="fu">cor</span>(.x, .y, <span class="at">use =</span> <span class="st">"complete.obs"</span>, <span class="at">method =</span> <span class="st">"kendall"</span>)),</span>
+<span id="cb11-59"><a href="#cb11-59" aria-hidden="true" tabindex="-1"></a>    <span class="at">kendall_pval =</span> <span class="fu">map2_dbl</span>(x, y, <span class="sc">~</span> <span class="fu">cor.test</span>(.x, .y)<span class="sc">$</span>p.value, <span class="at">method =</span> <span class="st">"kendall"</span>)</span>
+<span id="cb11-60"><a href="#cb11-60" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb11-61"><a href="#cb11-61" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="sc">-</span>x, <span class="sc">-</span>y) <span class="sc">%&gt;%</span></span>
+<span id="cb11-62"><a href="#cb11-62" aria-hidden="true" tabindex="-1"></a>  <span class="fu">unnest</span>(<span class="at">cols =</span> <span class="fu">last_col</span>()) <span class="sc">%&gt;%</span></span>
+<span id="cb11-63"><a href="#cb11-63" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_longer</span>(<span class="sc">-</span><span class="dv">1</span><span class="sc">:-</span><span class="dv">3</span>,</span>
+<span id="cb11-64"><a href="#cb11-64" aria-hidden="true" tabindex="-1"></a>               <span class="at">names_to =</span> <span class="st">"cortypeXmeasure"</span>,</span>
+<span id="cb11-65"><a href="#cb11-65" aria-hidden="true" tabindex="-1"></a>               <span class="at">values_to =</span> <span class="st">"value"</span>)</span>
+<span id="cb11-66"><a href="#cb11-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-67"><a href="#cb11-67" aria-hidden="true" tabindex="-1"></a>ests_level2 <span class="ot">&lt;-</span> cors_lin_angle <span class="sc">%&gt;%</span></span>
+<span id="cb11-68"><a href="#cb11-68" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rbind</span>(cors_lin_lin) <span class="sc">%&gt;%</span></span>
+<span id="cb11-69"><a href="#cb11-69" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(cortypeXmeasure) <span class="sc">%&gt;%</span></span>
+<span id="cb11-70"><a href="#cb11-70" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb11-71"><a href="#cb11-71" aria-hidden="true" tabindex="-1"></a>    <span class="at">correlation_type =</span> <span class="fu">str_split</span>(cortypeXmeasure, <span class="st">"_"</span>)[[<span class="dv">1</span>]][<span class="dv">1</span>],</span>
+<span id="cb11-72"><a href="#cb11-72" aria-hidden="true" tabindex="-1"></a>    <span class="at">measure =</span> <span class="fu">str_split</span>(cortypeXmeasure, <span class="st">"_"</span>)[[<span class="dv">1</span>]][<span class="dv">2</span>],</span>
+<span id="cb11-73"><a href="#cb11-73" aria-hidden="true" tabindex="-1"></a>    <span class="at">.before =</span> value</span>
+<span id="cb11-74"><a href="#cb11-74" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb11-75"><a href="#cb11-75" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ungroup</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb11-76"><a href="#cb11-76" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">what =</span> <span class="fu">paste</span>(par1, correlation_type, par2, <span class="at">sep =</span> <span class="st">"_"</span>),</span>
+<span id="cb11-77"><a href="#cb11-77" aria-hidden="true" tabindex="-1"></a>         <span class="at">.after =</span> correlation_type) <span class="sc">%&gt;%</span></span>
+<span id="cb11-78"><a href="#cb11-78" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="sc">-</span>cortypeXmeasure)</span>
+<span id="cb11-79"><a href="#cb11-79" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-80"><a href="#cb11-80" aria-hidden="true" tabindex="-1"></a>beepr<span class="sc">::</span><span class="fu">beep</span>(<span class="dv">9</span>)</span>
+<span id="cb11-81"><a href="#cb11-81" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-82"><a href="#cb11-82" aria-hidden="true" tabindex="-1"></a>ests_level2 <span class="sc">%&gt;%</span></span>
+<span id="cb11-83"><a href="#cb11-83" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cbind</span>(<span class="at">item =</span> item_, .) <span class="sc">%&gt;%</span> </span>
+<span id="cb11-84"><a href="#cb11-84" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(<span class="fu">here</span>(<span class="st">"fits"</span>,</span>
+<span id="cb11-85"><a href="#cb11-85" aria-hidden="true" tabindex="-1"></a>             <span class="fu">paste0</span>(<span class="st">"ests_level2_"</span>,</span>
+<span id="cb11-86"><a href="#cb11-86" aria-hidden="true" tabindex="-1"></a>                    item_,</span>
+<span id="cb11-87"><a href="#cb11-87" aria-hidden="true" tabindex="-1"></a>                    <span class="st">"_random_var.rds"</span>)</span>
+<span id="cb11-88"><a href="#cb11-88" aria-hidden="true" tabindex="-1"></a>             )</span>
+<span id="cb11-89"><a href="#cb11-89" aria-hidden="true" tabindex="-1"></a>        )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
 </section>
@@ -547,21 +652,44 @@ window.Quarto = {
 <h1>Results</h1>
 <p>Before making the plots, we first read the saved results:</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>ests_level1 <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"fits"</span>,</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>                            <span class="fu">paste0</span>(<span class="st">"ests_level1_"</span>,</span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>                                   item_,</span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>                                   <span class="st">"_random_var.rds"</span>)))</span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>ests_level2 <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"fits"</span>,</span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>                            <span class="fu">paste0</span>(<span class="st">"ests_level2_"</span>,</span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>                                   item_,</span>
-<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>                                   <span class="st">"_random_var.rds"</span>)))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>el1 <span class="ot">&lt;-</span> e_level1 <span class="ot">&lt;-</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rbind</span>(</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"fits"</span>,</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"ests_level1_pa_random_var.rds"</span>)),</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"fits"</span>,</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"ests_level1_fitbit_random_var.rds"</span>))</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>el1<span class="fl">.5</span>e_level1<span class="fl">.5</span> <span class="ot">&lt;-</span> </span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rbind</span>(</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"fits"</span>,</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"ests_level1.5_pa_random_var.rds"</span>)),</span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>    <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"fits"</span>,</span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"ests_level1.5_fitbit_random_var.rds"</span>))</span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>el2 <span class="ot">&lt;-</span> e_level2 <span class="ot">&lt;-</span></span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rbind</span>(</span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>    <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"fits"</span>,</span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"ests_level2_pa_random_var.rds"</span>)),</span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>    <span class="fu">readRDS</span>(<span class="fu">here</span>(<span class="st">"fits"</span>,</span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"ests_level2_fitbit_random_var.rds"</span>))</span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a>    )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
-<section id="level-1-plots" class="level2">
-<h2 class="anchored" data-anchor-id="level-1-plots">Level-1 plots</h2>
+<section id="level-1-plots" class="level2 unnumbered">
+
+
 </section>
 </section>
 
-</main>
+<div id="quarto-appendix" class="default"><section class="quarto-appendix-contents" role="doc-bibliography" id="quarto-bibliography"><h2 class="anchored quarto-appendix-heading">Level-1 plots</h2><div id="refs" class="references csl-bib-body hanging-indent" data-entry-spacing="0" role="list">
+<div id="ref-erbas_2018_WhyDonAlways" class="csl-entry" role="listitem">
+Erbas, Yasemin, Eva Ceulemans, Elise K. Kalokerinos, Marlies Houben, Peter Koval, Madeline L. Pe, and Peter Kuppens. 2018. <span>“Why i Don<span>’</span>t Always Know What i<span>’</span>m Feeling: The Role of Stress in Within-Person Fluctuations in Emotion Differentiation.”</span> <em>Journal of Personality and Social Psychology</em> 115 (2): 179–91. <a href="https://doi.org/10.1037/pspa0000126">https://doi.org/10.1037/pspa0000126</a>.
+</div>
+<div id="ref-yfantidou_2022_LifeSnaps4monthMultimodal" class="csl-entry" role="listitem">
+Yfantidou, Sofia, Christina Karagianni, Stefanos Efstathiou, Athena Vakali, Joao Palotti, Dimitrios Panteleimon Giakatos, Thomas Marchioro, Andrei Kazlouski, Elena Ferrari, and Šarūnas Girdzijauskas. 2022. <span>“LifeSnaps, a 4-Month Multi-Modal Dataset Capturing Unobtrusive Snapshots of Our Lives in the Wild.”</span> <em>Scientific Data</em> 9 (1): 663. <a href="https://doi.org/10.1038/s41597-022-01764-x">https://doi.org/10.1038/s41597-022-01764-x</a>.
+</div>
+</div></section></div></main>
 <!-- /main column -->
 <script id="quarto-html-after-body" type="application/javascript">
 window.document.addEventListener("DOMContentLoaded", function (event) {

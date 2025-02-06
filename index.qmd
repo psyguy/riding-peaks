@@ -9,17 +9,12 @@ execute:
   eval: false
   echo: true
 editor: visual
+bibliography: references.bib
 ---
 
 # Intro
 
-In this repository, I will fit explore multilevel modeling of the cosinor model, starting with single-component cosinor model on ESM data from Leuven Wave 1 dataset.
-
-The raw data is located in the `data` folder, and the long version of it is saved in `./data/d_leuven_long.rsd`. This dataframe contains variables `id` (between 1 and 202), `wave` (only 1), `beep_num` (number of beep throughout study, from 1 to 70), `hour_in_day` (clock hour in base-10, between 0 and 24), `beep_in_day` (beep number of the measurement day, from 1 to 10), `t` (date + time), `Date_Local` (dd-mm-yy), `Time_Local` (clock hour in h:m:s), `item` (12 items: `pa`, `na`, `ang`, `cheer`, `conf`, `dep`, `fear`, `hap`, `lone`, `rlx`, `sad`, `str`), `y` (measured value, from 0 to 100), and `time_in_hours` (decimal time since start of the data collection).
-
-The approach is to first fit the cosinor model (with the linear transformation) to the happiness time series using `brms`, then do our stuff (that follows).
-
-# Analysis
+In this repository, I will fit explore multilevel modeling of the cosinor model, starting with single-component cosinor model fitted to positive affect (PA) ESM time series data from Leuven Wave 1 of @erbas_2018_WhyDonAlways, and heart rate (fitbit) data from @yfantidou_2022_LifeSnaps4monthMultimodal. The processed datasets (saved as `d_leuven_joined.rds` and `d_fitbit_joined.rds` in the `data` folder) contains ILD measured values in `y`, the base-10 clock hour (between 0 and 24) in `t`, the regressors `co` ($\cos(\frac{2\pi}{24}t)$) and `si` ($\sin(\frac{2\pi}{24}t)$) calculated for each `t`, baseline PA (`b_pa`), and baseline NA (`bl_na`).
 
 The required packages are as follows:
 
@@ -38,53 +33,59 @@ library(circular)
 
 ```
 
-## Fitting the cosinor model
+# Analyses
 
-We make a new dataframe `d` by first filtering the data to only scores from one item denoted by `item_`; we consider `hap`, `sad`, `pa`, and `na` for `item_`, starting by `item_ <- "hap"`. We then change the name of the time variable (clock hour in day) to `t`, and add `co` ($\cos(\frac{2\pi}{24}t)$) and `si` ($\sin(\frac{2\pi}{24}t)$) as predictors:
-
-```{r}
-#| label: read-data-old
-
-item_ <- "na"
-
-d <- d_l %>%
-  filter(item == item_) %>%
-  mutate(t = hour_in_day,
-         co = cos(2*pi/24 * t),
-         si = sin(2*pi/24 * t)) %>%
-  select(id, t, y, co, si)
-
-```
-
-We already have the data for the Leuven 3-wave (wave 1) and fitbit heart rate datasets stored in long format with baseline variables and sine and cosine values in `d_leuven_joined` and `d_fitbit_joined` (in the `data` folder).
-
-We now make two dataframes: One for ESM variables, and one with only the baseline variables (which we need `bl_pa` and `bl_na` here). For each of the datasets and items, run the respective lines.
+We load the datasets, and run the analyses that follow for each separately.
 
 ```{r}
 #| label: read-data
 
-# For leuven dataset; choose pa, na, hap, or sad
-
+# For the Leuven dataset; choose pa
 item_ <- "pa"
 d <- readRDS(here("data",
                   "d_leuven_joined.rds")) %>%
   filter(item == item_)
 
 # For fitbit dataset
-
 item_ <- "fitbit"
 d <- readRDS(here("data",
                   "d_fitbit_joined.rds"))
 
 
-# Get the baseline PA and NA
+# Get the baseline PA and NA for the selected dataset
 d_bl <- d %>%
   select(id, bl_pa, bl_na) %>% 
   distinct()
 
 ```
 
-Then we fit two versions of the cosinor model: One with residual variance estimated as fixed effects (i.e., everyone getting the same $\sigma^2$):
+## Fitting the cosinor model
+
+We fit two versions of the cosinor model.
+
+### Model with fixed residual variance
+
+One with residual variance estimated as fixed effects (i.e., everyone getting the same $\sigma^2$), that is,
+
+$$
+\begin{aligned}
+&M_i = M + m_i \\
+&C_i = C + c_i \\
+&S_i = S + c_i \\
+&\sigma_i = \sigma
+\end{aligned} \quad,
+$$
+
+where
+
+$$
+\begin{bmatrix}M_i \\C_i \\S_i \end{bmatrix}
+\sim\mathcal{MN}(
+\begin{bmatrix}M \\C \\S \end{bmatrix}
+,\mathbf{\Sigma})
+$$
+
+using the following `brms` code:
 
 ```{r}
 #| label: brms-fixed-residual-variance
@@ -110,7 +111,29 @@ saveRDS(m_fixed_var,
         )
 ```
 
-And one with random residual variance:
+### Model with random residual variance
+
+We also fit a model with random residual variance, in which we also include an equation for the log of the individual specific variances $\rho_i = \log\sigma_i$ and the log of the fixed variance are $\rho = \log\sigma$, leading to
+
+$$
+\begin{aligned}
+&M_i = M + m_i \\
+&C_i = C + c_i \\
+&S_i = S + c_i \\
+&\rho_i = \rho + \varrho_i
+\end{aligned} \quad ,
+$$
+
+with
+
+$$
+\begin{bmatrix}M_i \\C_i \\S_i \\\rho_i\end{bmatrix}
+\sim\mathcal{MN}(
+\begin{bmatrix}M \\C \\S \\\rho\end{bmatrix}
+,\mathbf{\Sigma})
+$$
+
+using the following `brms` code:
 
 ```{r}
 #| label: brms-random-residual-variance
@@ -138,19 +161,25 @@ saveRDS(m_random_var,
         )
 ```
 
-Note that `| i | id` in the random effect specification sets the grouping variable `id` and assures to estimate the correlation between the random intercept and random slope in the first equation (for `y`) and the random intercept in the second equation (for `sigma`).
+Note that `| i | id` in the random effect specification sets the grouping variable `id` and assures to estimate the correlation between the random intercept and random slope in the first equation (for `y`) and the random intercept in the second equation (for `sigma`). We move on doing the analyses with the second model, so,
 
-And extract person-specific samples (per individual `id` $i$ and sample `iteration` sample $s$) of random effects: `mesor` (i.e., $M_i^s$ from `Intercept)`, `co` (i.e, ${\beta_c}_i^s$), and `si` (i.e., ${\beta_s}_i^s$). For the second model, we also extract `sigmaIntercept` (i.e., $\ln(\sigma_i^s)$, initially stored in `r_id__sigma[.,Intercept]`, also store it in `log_sigma`) and `sigma2` (i.e., ${\sigma_i^s}^2$ from `exp(sigmaIntercept)^2`.
+```{r}
 
-So for each individual `id` $i$ and sample `iteration` sample $s$, we calculate the correct `phi` ($\phi_i^s = \text{atan2}({\beta_s}_i^s, {\beta_c}_i^s)$) and incorrect `phi_atan` ($\phi_i^s = \text{atan}({\beta_s}_i^s/{\beta_c}_i^s)$) and the corresponding peak shifts $\psi_i^s = \frac{24}{2\pi} \phi_i^s$. We further add `phi.begins6` ($[\phi_i^s - \pi/2] \text{ mod } 2\pi$) and `phi.begins12` ($[\phi_i^s - \pi] \text{ mod } 2\pi$) as well, which are the correctly calculated $\phi_i^s$, but assuming the day starts at 6:00 and 12:00, respectively.
+# Model to move forward with
+m_fit <- readRDS(here("fits",
+             paste0("brms_",
+                    item_,
+                    "_random_var.rds")))
+```
 
-From now on, we move on with the estimates of the second model; for the first model, remove `sigma`... lines in the code below.
+### Model outputs
+
+The model `m_fit` contains samples from $D=6,000$ HMC draws, that include $4 \times D$ values for the fixed effects $M^{(d)}$, $C^{(d)}$, $S^{(d)}$, and $\rho^{(d)}$ (reported, respectively, as `b_Intercept`, `b_co`, `b_si`, and `b_sigma_Intercept`), $(6+4) \times D$ values for the correlations and SDs of $\mathbf{\Sigma}^{(d)}$, and $4 \times N \times D$ person-specific the random effects $m_i^{(d)}$, $c_i^{(d)}$, $s_i^{(d)}$, and $\varrho_i^{(d)}$ (reported, respectively, as `Intercept`, `co`, `si`, and `sigma_Intercept`).
+
+From these, at each draw $d$, we calculate the person-specific parameters $M_i^{(d)}$, $C_i^{(d)}$, $S_i^{(d)}$, and $\rho_i^{(d)}$ by summing the fixed and random effects and storing them, respectively, in `mesor`, `co`, `si` and `logsigma` columns. Based on these, we calculate person-specific SD (`sigma = exp(logsigma)`) and variance (`sigma2 = exp(logsigma)^2`), and the implied amplitude `amp` and phase (correctly calculated with `atan2(si,co)` in `phi`, and incorrectly calculate using `atan(si/co)` in `phi_atan`), and do these transformations for fixed effects (the `b_` variables). We also calculate the phase assuming starting the cycle, instead of midnight, at 6:00 (`phi.begins6`) and at 12:00 (`phi.begins12`).
 
 ```{r}
 #| label: extract-samples
-
-# Selecting the second model from now on
-m_fit <- m_random_var
 
 # Taking out the individual-specific sampled parameter estimates
 d_draws <- as_draws_df(m_fit) %>%
@@ -188,16 +217,77 @@ mutate(iteration = row_number()) %>%
     b_phi_atan = atan(b_si/b_co) %% (2*pi)
   ) %>%
   mutate(phi.begins6 = (phi - pi/2) %% (2*pi),
-         phi.begins12 = (phi - pi) %% (2*pi))
+         phi.begins12 = (phi - pi) %% (2*pi)) %>% 
+  mutate(id = id %>% as.integer())
 
 beepr::beep(5)
 ```
 
-## Extracting estimates
+## Obtaining estimates
 
 ### Level-1 estimates
 
 To get person-specific summary statistics, we do calculations across iterations (i.e., only `group_by(id) %>% summarize(...)`) to get mean, median, and 95%CI width of our estimated linear parameters, and for the circular parameters (`phi`, `phi.begins6`, `phi.begins12`), once incorrectly (using linear methods) and once correctly (using circular methods).
+
+We also need to get the complementary of posterior predictive p-value using the percentage of density in which $[0,0]$ falls by finding the $\alpha\%\text{-HDR}$ (highest density region) for `amp` based on samples of `co` and `si`, which we do with `compute_alpha_hdr`:
+
+```{r}
+#| label: compute_alpha_hdr
+
+# Load required packages
+require(ks)
+require(ggplot2)
+require(metR)
+
+compute_alpha_hdr <-
+  function(d,
+           x_0 = 0,
+           y_0 = 0,
+           n_grid = 200){
+    # 1. Kernel density estimation
+    fhat <- kde(d, gridsize = c(n_grid, n_grid))
+    
+    xseq <- fhat$eval.points[[1]]
+    yseq <- fhat$eval.points[[2]]
+    zmat <- fhat$estimate
+    
+    dx <- diff(xseq)[1]
+    dy <- diff(yseq)[1]
+    cell_area <- dx * dy
+    
+    # 2. Compute cumulative probability distribution to determine HDR thresholds
+    dens_vec <- as.vector(zmat)
+    dens_sorted <- sort(dens_vec, decreasing = TRUE)
+    cumulative_mass <- cumsum(dens_sorted * cell_area)
+    cumulative_mass <-
+      cumulative_mass / max(cumulative_mass)  # normalize
+    
+    # 3. Evaluate density at the given point (x_0, y_0)
+    f_point <- predict(fhat, x = cbind(x_0, y_0))
+    
+    # Find where f_point fits in the density distribution
+    # Identify the position of f_point in the sorted densities
+    idx <- which(dens_sorted < f_point)[1]
+    
+    if (is.na(idx)) {
+      # f_point is >= all densities, alpha_hdr ~ 1
+      alpha_hdr <- 1
+    } else {
+      # f_point lies between dens_sorted[idx-1] and dens_sorted[idx]
+      # if idx > 1, cumulative_mass[idx-1] gives us a close approximation
+      if (idx > 1) {
+        alpha_hdr <- cumulative_mass[idx - 1]
+      } else {
+        # idx = 1 means f_point < dens_sorted[1], so alpha is slightly less than cumulative_mass[1]
+        alpha_hdr <- cumulative_mass[1]
+      }
+    }
+    
+    return(round(alpha_hdr * 100, 1))
+  }
+```
+
+We then use this function along other ones
 
 ```{r}
 #| label: extract-level1-estimates
@@ -225,8 +315,9 @@ compute_circular_stats <- function(data, variable) {
 }
 
 # Apply calculations for all variables
-ests_level1.5 <- d_draws %>%
-  group_by(iteration) %>%
+ests_level1 <- d_draws %>%
+  # Change this to group_by(iteration) for level1.5
+  group_by(id) %>%
   summarise(
     bind_cols(
       # Linear calculations
@@ -234,29 +325,29 @@ ests_level1.5 <- d_draws %>%
       compute_linear_stats(cur_data(), "si"),
       compute_linear_stats(cur_data(), "co"),
       compute_linear_stats(cur_data(), "amp"),
+      compute_linear_stats(cur_data(), "logsigma"),
+      compute_linear_stats(cur_data(), "sigma"),
       compute_linear_stats(cur_data(), "sigma2"),
-      compute_linear_stats(cur_data(), "log_sigma"),
       compute_linear_stats(cur_data(), "phi"),
       compute_linear_stats(cur_data(), "phi.begins6"),
       compute_linear_stats(cur_data(), "phi.begins12"),
-
       # Circular calculations
       compute_circular_stats(cur_data(), "phi"),
       compute_circular_stats(cur_data(), "phi.begins6"),
       compute_circular_stats(cur_data(), "phi.begins12")
-    )
-  )
+    ),
+    # Compute amp_hdr using compute_alpha_hdr
+    amp_hdr = compute_alpha_hdr(cbind(cur_data()$co, cur_data()$si))
+  ) %>%
+  relocate(amp_hdr, .before = logsigma_mean)
 
-ests_level1.5 %>%
-  full_join(d_bl,
-            by = "id") %>% 
-  cbind(item = item_, .) %>% 
-saveRDS(here("fits",
-             paste0("ests_level1.5_",
-                    item_,
-                    "_random_var.rds")
-             )
-        )
+ests_level1 %>%
+  full_join(d_bl, by = "id") %>%
+  cbind(item = item_, .) %>%
+  saveRDS(
+    here("fits",
+         paste0("ests_level1_", item_, "_random_var.rds"))
+    )
 
 beepr::beep(10)
 
@@ -360,10 +451,11 @@ We then use the functions to do the calculations, make a long dataframe, and sav
 ```{r}
 #| label: extract-level2-estimates
 
-
-d_draws <- d_draws %>%
-  full_join(d_bl,
-            by = "id")
+# Add baseline bl_pa and bl_na to d_draws if not added yet
+if(sum(c("bl_pa", "bl_na") %in% names(d_draws)) == FALSE)
+  d_draws <- d_draws %>%
+    full_join(d_bl,
+              by = "id")
 
 # Compute correlations for all combinations
 cors_lin_angle <- d_draws %>%
@@ -371,7 +463,8 @@ cors_lin_angle <- d_draws %>%
   summarise(
     crossing(
       linear_variable = c("mesor",
-                          "log_sigma",
+                          "logsigma",
+                          "sigma",
                           "sigma2",
                           "bl_pa",
                           "bl_na",
@@ -399,7 +492,7 @@ cors_lin_lin <-  d_draws %>%
   group_by(iteration) %>%
   summarise(
     pair_data = list(
-      c("mesor", "amp", "log_sigma", "sigma2", "bl_pa", "bl_na") %>% 
+      c("mesor", "amp", "logsigma", "sigma", "sigma2", "bl_pa", "bl_na") %>% 
         combn(2) %>%
         t() %>%
         as.data.frame() %>%
@@ -456,14 +549,30 @@ Before making the plots, we first read the saved results:
 
 ```{r}
 
-ests_level1 <- readRDS(here("fits",
-                            paste0("ests_level1_",
-                                   item_,
-                                   "_random_var.rds")))
-ests_level2 <- readRDS(here("fits",
-                            paste0("ests_level2_",
-                                   item_,
-                                   "_random_var.rds")))
+el1 <- e_level1 <-
+  rbind(
+    readRDS(here("fits",
+                 "ests_level1_pa_random_var.rds")),
+    readRDS(here("fits",
+                 "ests_level1_fitbit_random_var.rds"))
+    )
+
+el1.5e_level1.5 <- 
+  rbind(
+    readRDS(here("fits",
+                 "ests_level1.5_pa_random_var.rds")),
+    readRDS(here("fits",
+                 "ests_level1.5_fitbit_random_var.rds"))
+    )
+
+el2 <- e_level2 <-
+  rbind(
+    readRDS(here("fits",
+                 "ests_level2_pa_random_var.rds")),
+    readRDS(here("fits",
+                 "ests_level2_fitbit_random_var.rds"))
+    )
+
 ```
 
 ## Level-1 plots
