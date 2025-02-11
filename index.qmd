@@ -23,8 +23,12 @@ The required packages are as follows:
 library(brms)
 library(psych)
 library(Rfast)
+library(MASS)
 library(tidyverse)
+library(patchwork)
 library(ggthemes)
+library(viridis)
+library(latex2exp)
 library(here)
 library(ggh4x)
 library(rlang)
@@ -219,6 +223,13 @@ mutate(iteration = row_number()) %>%
   mutate(phi.begins6 = (phi - pi/2) %% (2*pi),
          phi.begins12 = (phi - pi) %% (2*pi)) %>% 
   mutate(id = id %>% as.integer())
+
+d_draws %>%
+  cbind(item = item_, .) %>%
+  saveRDS(
+    here("fits",
+         paste0("draws_", item_, "_random_var.rds"))
+    )
 
 beepr::beep(5)
 ```
@@ -549,6 +560,14 @@ Before making the plots, we first read the saved results:
 
 ```{r}
 
+draws <-
+  rbind(
+    readRDS(here("fits",
+                 "draws_pa_random_var.rds")),
+    readRDS(here("fits",
+                 "draws_fitbit_random_var.rds"))
+    )
+
 el1 <- e_level1 <-
   rbind(
     readRDS(here("fits",
@@ -577,6 +596,280 @@ el2 <- e_level2 <-
 
 ## Level-1 plots
 
+### Amplitude HDR
+
+For the HDR plot we use `f_plot_hdr`, that plots the heatmap of the joint posterior distributions of $C_i$ and $S_i$, adds contour lines at 95, 95, 90, 85, and 80 %HDRs, and adds a line from the origin to the median of the joint distribution.
+
 ```{r}
 
+f_plot_hdr <- function(df,
+                       x_col = "co",
+                       y_col = "si",
+                       title = "HDR heatmap",
+                       xlim = NULL,
+                       ylim = NULL) {
+  # Determine axis limits if not provided
+  if (is.null(xlim) || is.null(ylim)) {
+    co_range <- range(df[[x_col]], na.rm = TRUE)
+    si_range <- range(df[[y_col]], na.rm = TRUE)
+    max_range <- max(abs(c(co_range, si_range))) * 1.2  # Expand range by 20%
+    xlim <- c(-max_range, max_range)
+    ylim <- c(-max_range, max_range)
+  }
+  
+  # Compute 2D density with extended limits
+  density_est <- MASS::kde2d(df[[x_col]],
+                             df[[y_col]],
+                             n = 300,
+                             lims = c(xlim[1], xlim[2], ylim[1], ylim[2]))  # Ensure density extends to plot edges
+  
+  # Convert density estimate to a dataframe
+  density_df <- expand.grid(co = density_est$x, si = density_est$y) %>%
+    mutate(density = as.vector(density_est$z)) %>%
+    arrange(desc(density)) %>%
+    mutate(cumulative_prob = cumsum(density) / sum(density) * 100)  # HDR
+  
+  # Compute median coordinates and distance from origin
+  median_co <- median(df[[x_col]], na.rm = TRUE)
+  median_si <- median(df[[y_col]], na.rm = TRUE)
+  distance_from_origin <- sqrt(median_co^2 + median_si^2)
+  
+  # Define color palette
+  viridis_colors <- viridis(256, direction = -1)
+  viridis_colors[1] <- "#FFFFFF"  # Make the lowest density white
+  
+  # Generate tick labels for axes (without decimals)
+  x_ticks <- seq(xlim[1], xlim[2], by = 5) %>% round()
+  y_ticks <- seq(ylim[1], ylim[2], by = 5) %>% round()
+  x_tick_labels <- ifelse(x_ticks == 0, "", as.character(x_ticks))
+  y_tick_labels <- ifelse(y_ticks == 0, "", as.character(y_ticks))
+  
+  # Create plot
+  p <- ggplot(density_df, aes(x = co, y = si)) +
+    # Heatmap with fine-grained HDR levels
+    geom_tile(aes(fill = cumulative_prob)) +
+    # Reverse viridis_colors and set legend breaks at 10% intervals
+    scale_fill_gradientn(
+      colors = rev(viridis_colors),
+      breaks = seq(0, 100, by = 10),
+      minor_breaks = seq(0, 100, by = 5),
+      limits = c(0, 100),
+      name = "HDR (%)"
+    ) +
+    # Add contour lines at specified HDR levels
+    geom_contour(
+      aes(z = cumulative_prob),
+      breaks = c(95, 90, 85, 80),
+      color = "white",
+      size = 0.7
+    ) +
+    # Add custom axes at the center
+    geom_hline(yintercept = 0,
+               color = "black",
+               alpha = 0.6,
+               size = 0.4) +  # X-axis
+    geom_vline(xintercept = 0,
+               color = "black",
+               alpha = 0.6,
+               size = 0.4) +  # Y-axis
+    # Add line segments for median projections
+    annotate(
+      "segment",
+      x = median_co,
+      xend = median_co,
+      y = 0,
+      yend = median_si,
+      color = "blue",
+      linetype = "dashed"
+    ) +  # Vertical projection
+    annotate(
+      "segment",
+      x = 0,
+      xend = median_co,
+      y = median_si,
+      yend = median_si,
+      color = "blue",
+      linetype = "dashed"
+    ) +  # Horizontal projection
+    annotate(
+      "segment",
+      x = 0,
+      xend = median_co,
+      y = 0,
+      yend = median_si,
+      color = "red",
+      size = 0.7
+    ) +  # Line from origin to median
+    # Ensure square aspect ratio
+    coord_fixed(ratio = 1,
+                xlim = xlim,
+                ylim = ylim) +
+    # Theme and labels
+    theme_few() +
+    labs(x = TeX("$C_i$"), y = TeX("$S_i$"), title = title)
+  
+  return(p)
+}
+```
+
+And make plots for Persons 76 and 179 of Dataset 1 (with the origin at 75.0%HDR and 98.9%HDR, respectively) of Dataset 1, and Persons 11 and 42 of Dataset 2 (with the origin at 83.9%HDR and 100%HDR, respectively).
+
+```{r}
+
+p_pa_76 <- draws %>%
+  filter(item == "pa", id == 76) %>%
+  f_plot_hdr(title = "Person D1-76")
+p_pa_179 <- draws %>%
+  filter(item == "pa", id == 179) %>%
+  f_plot_hdr(title = "Person D1-179")
+
+p_fitbit_11 <- draws %>%
+  filter(item == "fitbit", id == 11) %>%
+  f_plot_hdr(title = "Person D2-11")
+p_fitbit_42 <- draws %>%
+  filter(item == "fitbit", id == 42) %>%
+  f_plot_hdr(title = "Person D2-42")
+
+
+p_four <- (p_pa_76/ p_pa_179) | (p_fitbit_11/ p_fitbit_42)
+
+(p_four +
+  plot_layout(guides = "collect") &
+  theme(legend.position = 'bottom',
+        legend.key.width = unit(1.5, "cm"))) # + plot_annotation("Posterior joint distribution of C_i and S_i")
+
+ggsave("joint-posterior-hdr.pdf",
+       width = 20,
+       height = 20,
+       units = "cm")
+```
+
+We print the person-specific amplitude and the corresponding HDR level of each individual, with percentage of individuals that fall within each HDR level:
+
+```{r}
+
+library(ggplot2)
+library(dplyr)
+library(viridis)
+
+# Assuming el1_tmp is your dataframe
+el1_tmp <- el1 %>%
+  mutate(interval = cut(
+    amp_hdr,
+    breaks = c(0, 80, 85, 90, 95, 100),
+    labels = c("0-80", "80-85", "85-90", "90-95", "95-100"),
+    include.lowest = TRUE,
+    ordered_result = TRUE
+  ),
+  item = case_when(
+    item == "pa" ~ "Dataset 1",
+    TRUE ~ "Dataset 2"
+  ))
+
+# Generate a complete set of intervals for each item to ensure missing intervals are represented
+interval_template <- expand.grid(
+  item = unique(el1_tmp$item),
+  interval = levels(el1_tmp$interval),
+  stringsAsFactors = FALSE
+)
+
+# Calculate percentages per interval per item
+interval_counts <- el1_tmp %>%
+  group_by(item) %>%
+  mutate(total_per_item = n()) %>%
+  group_by(item, interval) %>%
+  summarise(n = n(),
+            percent = round(n / first(total_per_item) * 100, 1),
+            .groups = 'drop') %>%
+  right_join(interval_template, by = c("item", "interval")) %>%
+  mutate(n = replace_na(n, 0),
+         percent = replace_na(percent, 0))
+
+# Adjust interval y positions
+interval_counts <- interval_counts %>%
+  mutate(
+    y_position = case_when(
+      interval == "0-80" ~ 77.5,
+      interval == "80-85" ~ 82.5,
+      interval == "85-90" ~ 87.5,
+      interval == "90-95" ~ 92.5,
+      interval == "95-100" ~ 97.5
+    )
+  )
+
+# Calculate max amp_median per item to position labels appropriately with better spacing
+max_amp_median <- el1_tmp %>% 
+  group_by(item) %>% 
+  summarise(max_median = max(amp_median, na.rm = TRUE))
+
+interval_counts <- interval_counts %>%
+  left_join(max_amp_median, by = "item") %>%
+  mutate(label_x_position = max_median * 1.015)  # Adjusted to a smaller shift
+
+p_hist <- ggplot(el1_tmp, aes(x = amp_median)) +
+  geom_histogram(alpha = 0.6,
+                 fill = "cornflowerblue") +
+  theme_minimal() +
+  labs(x = "", y = "") +
+  scale_x_continuous(expand = c(0, 0), limits = c(0, NA)) +
+  facet_wrap( ~ item,
+              nrow = 1,
+              scales = "free",
+              strip.position = "top") +
+  theme(panel.spacing = unit(2, "lines"),
+        strip.text = element_text(size = 12),
+        legend.position = "none",
+        axis.text = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.background = element_blank(),
+        plot.margin = margin(0,0,0,0)) 
+
+
+# Main scatter plot with facet wrap by item and adjusted spacing
+p_scatter <- ggplot(el1_tmp, aes(x = amp_median,
+                     y = amp_hdr,
+                     color = interval)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(
+    yintercept = c(95, 90, 85, 80),
+    linetype = "dotted",
+    color = "red"
+  ) +
+  scale_color_viridis_d(begin = 0.3, end = 0.95) +
+  scale_fill_viridis_d(begin = 0.3, end = 0.95) +
+  theme_minimal() +
+  labs(x = "Person-specific Amplitude", y = TeX("$\\alpha$%HDR")) +
+  geom_label(
+    data = interval_counts,
+    aes(
+      x = label_x_position,
+      y = y_position,
+      label = paste0(percent, "%"),
+      fill = interval
+    ),
+    alpha = 0.6,
+    color = "black",
+    hjust = 1.1,
+    size = 4
+    # label.size = 0  # Removes border for better readability
+  ) +
+  scale_x_continuous(expand = c(0, 0), limits = c(0, NA)) +
+  scale_y_continuous(breaks = seq(0, 100, 25) %>% c(80, 85, 90, 95)) +
+  facet_wrap( ~ item,
+              nrow = 1,
+              scales = "free_x",
+              strip.position = "top") +
+  theme(panel.spacing = unit(2, "lines"),
+        strip.text = element_blank(),#element_text(size = 12),
+        legend.position = "none")
+
+
+p_hist / p_scatter + patchwork::plot_layout(heights = c(0.5,3))
+
+
+ggsave("l1-amp-hist-with-hdr.pdf",
+       width = 20,
+       height = 25,
+       units = "cm")
 ```
