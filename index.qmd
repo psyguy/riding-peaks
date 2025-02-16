@@ -315,11 +315,16 @@ compute_linear_stats <- function(data, variable) {
 
 # Helper function for circular stats
 compute_circular_stats <- function(data, variable) {
+  
+  ci_2.5 <- quantile.circular(data[[variable]], 0.025)
+  ci_97.5 <- quantile.circular(data[[variable]], 0.975)
+  # if(ci_2.5 > ci_97.5) ci_2.5 <- ci_2.5 - 2*pi
+  
   tibble(
     circ_mean = (mean.circular(data[[variable]]) %% (2 * pi)) %>% as.numeric(),
     circ_median = (median.circular(data[[variable]]) %% (2 * pi)) %>% as.numeric(),
     circ_ci_width = (
-      (quantile.circular(data[[variable]], 0.975) - quantile.circular(data[[variable]], 0.025)) %% (2 * pi)
+      (ci_97.5 - ci_2.5) %% (2 * pi)
     ) %>% as.numeric()
   ) %>%
     rename_with(~ paste0(variable, "_", .))
@@ -712,7 +717,7 @@ f_plot_hdr <- function(df,
 }
 ```
 
-And make plots for Persons 76 and 179 of Dataset 1 (with the origin at 75.0%HDR and 98.9%HDR, respectively) of Dataset 1, and Persons 11 and 42 of Dataset 2 (with the origin at 83.9%HDR and 100%HDR, respectively).
+And make plots for Persons 76 and 179 of Dataset 1 (with the origin at 75.0%HDR and 98.9%HDR, respectively) of Dataset 1, and Persons 11 and 20 of Dataset 2 (with the origin at 83.9%HDR and 100%HDR, respectively).
 
 ```{r}
 
@@ -726,21 +731,23 @@ p_pa_179 <- draws %>%
 p_fitbit_11 <- draws %>%
   filter(item == "fitbit", id == 11) %>%
   f_plot_hdr(title = "Person D2-11")
-p_fitbit_42 <- draws %>%
-  filter(item == "fitbit", id == 42) %>%
-  f_plot_hdr(title = "Person D2-42")
+p_fitbit_26 <- draws %>%
+  filter(item == "fitbit", id == 26) %>%
+  f_plot_hdr(title = "Person D2-26")
 
 
-p_four <- (p_pa_76/ p_pa_179) | (p_fitbit_11/ p_fitbit_42)
+p_four <- (p_pa_76/ p_pa_179) | (p_fitbit_11/ p_fitbit_26)
 
-(p_four +
+p_four +
   plot_layout(guides = "collect") &
-  theme(legend.position = 'bottom',
-        legend.key.width = unit(1.5, "cm"))) # + plot_annotation("Posterior joint distribution of C_i and S_i")
+  theme(legend.position = 'right',
+        legend.key.height = unit(1, "cm"),
+        legend.title = element_text(size = 10))
+# + plot_annotation("Posterior joint distribution of C_i and S_i")
 
 ggsave("joint-posterior-hdr.pdf",
        width = 20,
-       height = 20,
+       height = 16,
        units = "cm")
 ```
 
@@ -816,7 +823,15 @@ p_hist <- ggplot(el1_tmp, aes(x = amp_median)) +
               nrow = 1,
               scales = "free",
               strip.position = "top") +
-  theme(panel.spacing = unit(2, "lines"),
+  # Add line under dataset name in the facet title
+  annotate("segment",
+           x = Inf,
+           xend = -Inf,
+           y = Inf,
+           yend = Inf,
+           color = "black",
+           lwd = 0.75) +
+  theme(panel.spacing = unit(3, "lines"),
         strip.text = element_text(size = 12),
         legend.position = "none",
         axis.text = element_blank(),
@@ -830,12 +845,12 @@ p_hist <- ggplot(el1_tmp, aes(x = amp_median)) +
 p_scatter <- ggplot(el1_tmp, aes(x = amp_median,
                      y = amp_hdr,
                      color = interval)) +
-  geom_point(alpha = 0.6) +
   geom_hline(
     yintercept = c(95, 90, 85, 80),
     linetype = "dotted",
     color = "red"
   ) +
+  geom_point(alpha = 0.6) +
   scale_color_viridis_d(begin = 0.3, end = 0.95) +
   scale_fill_viridis_d(begin = 0.3, end = 0.95) +
   theme_minimal() +
@@ -851,7 +866,7 @@ p_scatter <- ggplot(el1_tmp, aes(x = amp_median,
     alpha = 0.6,
     color = "black",
     hjust = 1.1,
-    size = 4
+    size = 3
     # label.size = 0  # Removes border for better readability
   ) +
   scale_x_continuous(expand = c(0, 0), limits = c(0, NA)) +
@@ -860,16 +875,394 @@ p_scatter <- ggplot(el1_tmp, aes(x = amp_median,
               nrow = 1,
               scales = "free_x",
               strip.position = "top") +
-  theme(panel.spacing = unit(2, "lines"),
+  theme(panel.spacing = unit(3, "lines"),
         strip.text = element_blank(),#element_text(size = 12),
         legend.position = "none")
 
 
-p_hist / p_scatter + patchwork::plot_layout(heights = c(0.5,3))
+p_hist / p_scatter + patchwork::plot_layout(heights = c(0.5,2))
 
 
 ggsave("l1-amp-hist-with-hdr.pdf",
        width = 20,
-       height = 25,
+       height = 15,
        units = "cm")
 ```
+
+### Circular and linear histograms and estimates
+
+We first make a function to make the plots:
+
+```{r}
+
+f_plot_cirular_linear <- function(phi,
+                                  title = "Circular and linear histograms") {
+
+# one bin for every minutes
+bins <- 24 * 60 / 1
+
+arc <- (2 * pi) / bins
+breaks <- seq(0, 2 * pi, length.out = (bins + 1))
+bins.count <- hist.default(phi,
+                           breaks = breaks,
+                           plot = FALSE,
+                           right = TRUE)$counts
+mids <- seq(arc / 2, 2 * pi - pi / bins, length = bins)
+
+inc <- .2 / max(bins.count)
+
+d <- data.frame(r = rep(NA, 1),
+                x = rep(NA, 1),
+                y = rep(NA, 1))
+d_tmp <- d
+
+for (i in 1:bins) {
+  if (bins.count[i] != 0) {
+    for (j in 0:(bins.count[i] - 1)) {
+      d_tmp$r <- 1 + j * inc
+      d_tmp$x <- d_tmp$r * cos(mids[i])
+      d_tmp$y <- d_tmp$r * sin(mids[i])
+      d <- rbind(d, d_tmp)
+    }
+  }
+}
+
+# Consolidated Data Construction
+d_summary <- data.frame(
+  type = c("linear", "circular"),
+  mean = c(phi %>% mean(), phi %>% circular %>% mean() %>% `%%`(2 * pi)),
+  median = c(phi %>% median(), phi %>% circular %>% median() %>% `%%`(2 *
+                                                                        pi)),
+  ci_2.5 = c(phi %>% quantile(0.025), phi %>% circular %>% quantile(0.025)),
+  ci_97.5 = c(phi %>% quantile(0.975), phi %>% circular %>% quantile(0.975)),
+  r = c(0.85, 1)
+) %>%
+  mutate(ci_2.5 = if_else(ci_2.5 > ci_97.5, ci_2.5 - 2 * pi, ci_2.5))
+
+d_estimates <- d_summary %>%
+  pivot_longer(
+    cols = c(mean, median),
+    names_to = "measure",
+    values_to = "value"
+  ) %>%
+  mutate(x = cos(value) * 1.4, y = sin(value) * 1.4)
+
+p_circle <- ggplot() +
+
+  # Cross lines
+  geom_vline(xintercept = 0,
+             linewidth = 0.3,
+             color = "gray60") +
+  geom_hline(yintercept = 0,
+             linewidth = 0.3,
+             color = "gray60") +
+
+  # Outer circle
+  geom_circle(
+    aes(x0 = 0, y0 = 0, r = 1),
+    data = data.frame(),
+    inherit.aes = FALSE,
+    # linetype = "dashed",
+    color = "gray70"
+  ) +
+  
+  # Background points
+  geom_point(data = d,
+             aes(x = x, y = y),
+             size = 0.2,
+             color = "azure4") +
+
+  # Confidence Bands as Slices
+  geom_polygon(
+    data = d_summary %>%
+      group_by(type) %>%
+      summarise(x = c(0, cos(
+        seq(ci_2.5, ci_97.5, length.out = 100)
+      ) * r), y = c(0, sin(
+        seq(ci_2.5, ci_97.5, length.out = 100)
+      ) * r)),
+    aes(x = x, y = y, fill = type),
+    alpha = 0.6
+  ) +
+
+  # Rays for mean/median
+  geom_segment(
+    aes(
+      x = 0,
+      y = 0,
+      xend = cos(value) * r,
+      yend = sin(value) * r,
+      color = type,
+      linetype = measure
+    ),
+    data = d_summary %>%
+      pivot_longer(
+        cols = c(mean, median),
+        names_to = "measure",
+        values_to = "value"
+      ),
+    linewidth = 1.2,
+    alpha = 0.7
+  ) +
+
+  # Asterisk Markers
+  geom_point(
+    aes(
+      x = cos(value) * r,
+      y = sin(value) * r,
+      shape = measure,
+      color = type
+    ),
+    size = 3,
+    stroke = 1,
+    data = d_summary %>%
+      pivot_longer(
+        cols = c(mean, median),
+        names_to = "measure",
+        values_to = "value"
+      )
+  ) +
+
+  # Color, Shape, and Line Scales
+  scale_fill_manual(values = c("circular" = "cornflowerblue",
+                               "linear" = "brown1")) +
+  scale_color_manual(values = c("circular" = "cornflowerblue",
+                                "linear" = "brown1")) +
+  scale_shape_manual(values = c("mean" = 1,
+                                "median" = 8)) +
+  scale_linetype_manual(values = c("mean" = "solid",
+                                   "median" = "dashed")) +
+
+  # Axis and Layout
+  coord_fixed(xlim = c(-1.1, 1.1), ylim = c(-1.1, 1.1)) +
+
+  # Theme
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    # legend.title = element_blank(),
+    panel.grid = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank()
+  ) +
+  ggtitle(title)
+
+
+p_hist <-
+  data.frame(x = phi) %>%
+  ggplot() +
+  aes(x = x) +
+  geom_histogram(aes(y = ..ncount..),
+                 bins = 24 * 5,
+             color = "azure4",
+             fill = "azure4") +
+  geom_segment(
+    aes(
+      x = value,
+      xend = value,
+      y = 0,
+      yend = r^3 * 0.4,
+      color = type,
+      linetype = measure
+    ),
+    lwd = 1.5,
+    alpha = 0.6,
+    data = d_estimates,
+    inherit.aes = FALSE
+  ) +
+  geom_point(
+    aes(
+      x = value,
+      y = r^3 * 0.4,
+      shape = measure,
+      color = type
+    ),
+    size = 3,
+    stroke = 1,
+    data = d_estimates,
+    inherit.aes = FALSE
+  ) +
+  geom_rect(aes(xmin = ci_2.5,
+                xmax = ci_97.5,
+                ymin = 0,
+                ymax = r^3 * 0.4,
+                fill = type),
+            data = d_estimates %>%
+              mutate(
+                ci_2.5= ci_2.5 %% (2*pi),
+                ci_97.5 = ci_97.5 %% (2*pi),
+                new_ci_2.5 = case_when(
+                  measure == "mean" & ci_2.5 > ci_97.5 ~ 0,
+                  measure == "median" & ci_2.5 > ci_97.5 ~ ci_2.5,
+                  TRUE ~ ci_2.5
+                ),
+                new_ci_97.5 = case_when(
+                  measure == "mean" & ci_2.5 > ci_97.5 ~ ci_97.5,
+                  measure == "median" & ci_2.5 > ci_97.5 ~ 2 * pi,
+                  TRUE ~ ci_97.5
+                )
+              ) %>%
+              select(-ci_2.5, -ci_97.5) %>%
+              rename(ci_2.5 = new_ci_2.5, ci_97.5 = new_ci_97.5) %>%
+              select(type, ci_2.5, ci_97.5, r) %>%
+              distinct(),
+            alpha = 0.6,
+            inherit.aes = FALSE
+                  ) +
+  theme_minimal() +
+  theme(#legend.position = "none",
+    panel.grid = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_blank()) +
+  xlab("Position in cycle") +
+  ylab(NULL) +
+  # Color, Shape, and Line Scales
+  scale_fill_manual(values = c("circular" = "cornflowerblue",
+                               "linear" = "brown1")) +
+  scale_color_manual(values = c("circular" = "cornflowerblue",
+                                "linear" = "brown1")) +
+  scale_shape_manual(values = c("mean" = 1,
+                                "median" = 8)) +
+  scale_linetype_manual(values = c("mean" = "solid",
+                                   "median" = "dashed")) +
+    expand_limits(x = c(0, 2 * pi))
+
+(p_circle / plot_spacer() / p_hist) +
+  plot_layout(heights = c(1, 0.1, 0.5))
+
+}
+```
+
+For print-friendly coloring, `"circular" = "#313695"` and `"linear" = "#F46D43"` (from `RColorBrewer::brewer.pal(11, "RdYlBu")`) can be used; however, they look really ugly on screen. So we'll use `"cornflowerblue"` and `"brown1"`, respectively.
+
+And then make the plots for Persons D1-179 and D2-26:
+
+```{r}
+
+p_1 <- draws %>%
+  filter(item == "pa", id == 179) %>%
+  pull(phi) %>% 
+  f_plot_cirular_linear(title = "Person D1-179")
+
+p_2 <- draws %>%
+  filter(item == "fitbit", id == 26) %>%
+  pull(phi) %>% 
+  f_plot_cirular_linear(title = "Person D2-26")
+
+(p_1 | plot_spacer() | p_2) + plot_layout(widths = c(1, 0.1, 1), guides = "collect")
+
+ggsave("distribution-circular-linear.pdf",
+       width = 20,
+       height = 15,
+       units = "cm")
+```
+
+Now we make the plots for the distributions of estimated mean, median, and 95%CI width for datasets, for linear or circular methods. For that we first need to reahape the dataframe:
+
+```{r}
+
+el1_long <- el1 %>%
+  pivot_longer(
+    cols = matches("^phi"),
+    names_to = "phi_type",
+    values_to = "phi"
+  ) %>%
+  mutate(
+    method = ifelse(str_detect(phi_type, "_circ"), 
+                    "With circular approach",
+                    "With linear approach"),
+    starting_hour = case_when(
+      str_detect(phi_type, "begins6") ~ 6,
+      str_detect(phi_type, "begins12") ~ 12,
+      TRUE ~ 0
+    ),
+    starting_hour_factor = case_when(
+      str_detect(phi_type, "begins6") ~ "Starting at 6:00",
+      str_detect(phi_type, "begins12") ~ "Starting at 12:00",
+      TRUE ~ "Starting at 0:00"
+    ) %>% 
+      factor(levels = c("Starting at 0:00",
+                        "Starting at 6:00",
+                        "Starting at 12:00")),
+    measure = case_when(
+      str_detect(phi_type, "_mean$") ~ "Mean",
+      str_detect(phi_type, "_median$") ~ "Median",
+      str_detect(phi_type, "_ci_width$") ~ "95%CI width",
+      TRUE ~ NA_character_
+    ),
+    # Streamlined psi calculation:
+    psi = ifelse(
+      measure == "95%CI width",
+      phi * 12 / pi,
+      ((phi * 12 / pi) + starting_hour) %% 24
+    )
+  ) %>%
+  filter(!is.na(measure)) %>%
+  select(
+    item,
+    id,
+    method,
+    starting_hour,
+    starting_hour_factor,
+    measure,
+    phi,
+    psi
+  )
+```
+
+And we plot them:
+
+```{r}
+
+el1_long %>%
+  mutate(measure = factor(measure,
+                          levels = c("Mean",
+                                     "Median",
+                                     "95%CI width")),
+         item = case_when(
+           item == "pa" ~ "Dataset 1",
+           TRUE ~ "Dataset 2"
+         )
+         ) %>%
+  ggplot() +
+  aes(x = psi,
+      fill = method) +
+  geom_histogram(
+    aes(y = ..ncount..),
+    bins = 24,
+    position = "identity",
+    breaks = seq(0, 24, by = 0.5),
+    alpha = 0.6
+  ) +
+  facet_nested(starting_hour_factor ~ item + measure,
+               scales = "fixed") +
+  xlab("Hours") +
+  scale_x_continuous(breaks = (0:4) * 6) +
+  scale_fill_manual(values = c("cornflowerblue", "brown1")) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    panel.spacing.x = unit(1.5, "lines"),
+    ggh4x.facet.nestline = element_line(linewidth = 0.5),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank(),
+  legend.text = element_text(size = 8),
+  strip.text.x = element_text(size = 12),
+  strip.text.y = element_text(size = 10),
+  axis.title.x = element_text(size = 8),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_blank(),
+  legend.key.height = unit(.5, "cm")
+  )
+
+ggsave("distribution-l1-estimates.pdf",
+       width = 25,
+       height = 12.5,
+       units = "cm")
+```
+
+And we use it
