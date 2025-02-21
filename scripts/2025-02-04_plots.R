@@ -173,42 +173,48 @@ ee2 <-
 
 ee2 %>%
   filter(correlation_type %in% c("Pearson (lin-lin)",
+                                 "Spearman (lin-lin rank)",
                                  "Johnson–Wehrly–Mardia (circ-lin)",
                                  "Mardia (circ-lin rank)")) %>%
   # filter(item == "fitbit") %>%
   filter(measure != "cor_abs",
+         par1 %in% c("amp", "mesor"),
          measure != "pval") %>%
   # filter(par1 %in% c("cor(.,MESOR)","cor(.,Amplitude)", "cor(.,baseline PA)", "cor(.,baseline NA)")) %>%
   ggplot(aes(x = value, fill = correlation_type)) +
   geom_vline(xintercept = 0.00, linetype = "dashed") +
   geom_histogram(bins = 200,
+                 color = NA,
                  alpha = 0.7,
                  position="identity") +
   # facet_nested(item + variable ~ par1 + measure,
   facet_nested(par1 + variable ~ item + measure,
                scales = "free") +
   geom_vline(aes(xintercept = mm,
-                 color = correlation_type)) +
+                 color = correlation_type),
+             show.legend = FALSE) +
   labs(title = "Histograms circular-linear correlations",
        x = "Value",
        y = "Frequency") +
-  scale_fill_manual(values = c("brown1",
-                               # "brown3",
-                               # "brown4",
-                               "lightskyblue",
-                               "cornflowerblue")) +
-  scale_color_manual(values = c("brown1",
-                                # "brown3",
-                                # "brown4",
-                                "lightskyblue",
-                                "cornflowerblue"),
-                     guide = "none") +
+  # facet_nested(item + variable ~ par1 + measure,
+  labs(title = "Histograms circular-linear correlations",
+       x = "Value",
+       y = "Frequency") +
+  scale_fill_manual(values = c("#9C179EFF",
+                               "#C33D80FF",
+                               "#54C568FF",
+                               "#A5DB36FF")) +
+  scale_color_manual(values = c("#9C179EFF",
+                               "#C33D80FF",
+                               "#54C568FF",
+                               "#A5DB36FF")) +
+
   ggthemes::theme_tufte() +
   # theme_minimal() +
   scale_y_continuous(transform = "sqrt") +
   theme(
     legend.position = "bottom",
-    legend.text = element_text(size = 10),
+    legend.text = element_text(size = 7),
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
     axis.title.y = element_blank(),
@@ -218,9 +224,9 @@ ee2 %>%
 
 # Scatter plots of cor and p-value
 
-
 ee2 %>%
   filter(correlation_type %in% c("Pearson (lin-lin)",
+                                 "Johnson–Wehrly–Mardia (circ-lin)",
                                  "Mardia (circ-lin rank)")) %>%
   # filter(item == "fitbit",
   #        iteration < 1000) %>%
@@ -236,7 +242,7 @@ ee2 %>%
   labs(title = "Histograms circular-linear correlations",
        x = "p-value",
        y = "Correlation") +
-  geom_label_repel(
+  ggrepel::geom_label_repel(
     data = . %>%
       group_by(item, variable, correlation_type, par1) %>%
       summarise(percent_significant = paste0(
@@ -257,12 +263,12 @@ ee2 %>%
   scale_fill_manual(values = c("brown1",
                                # "brown3",
                                # "brown4",
-                               # "lightskyblue",
+                               "lightskyblue",
                                "cornflowerblue")) +
   scale_color_manual(values = c("brown1",
                                 # "brown3",
                                 # "brown4",
-                                # "lightskyblue",
+                                "lightskyblue",
                                 "cornflowerblue")) +
   ggthemes::theme_tufte() +
   theme_minimal() +
