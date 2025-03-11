@@ -77,7 +77,7 @@ ui <- fluidPage(
            textAreaInput("dplyrCode", "dplyr pipeline (including dataframe name and pipeline)",
                          placeholder = "e.g. dfName %>% filter(x > 0) %>% mutate(z = x * 2)",
                          rows = 3, width = "90%")
-    ),
+    ),˜
     column(width = 12,
            actionButton("loadDF", "Load DF from Workspace")
     )
@@ -144,13 +144,13 @@ server <- function(input, output, session) {
       expr <- parse(text = pipeline)
       tryCatch({
         dfRes <- eval(expr)
-        rv$df <- dfRes
+        rv$df <- dfRes %>% select(x, z)  # Key fix: Ensure only x/z columns
         showNotification("Data loaded successfully!", type = "message")
       }, error = function(e) {
         showNotification(paste("Error in pipeline:", e$message), type = "error")
       })
     } else {
-      rv$df <- dfEnv
+      rv$df <- dfEnv %>% select(x, z)  # Key fix: Ensure only x/z columns
       showNotification("Data loaded successfully!", type = "message")
     }
   })

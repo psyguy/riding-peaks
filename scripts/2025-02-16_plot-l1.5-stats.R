@@ -2,7 +2,7 @@ library(dplyr)
 library(tidyr)
 library(stringr)
 
-el1.5_long <- el1.5e_level1.5 %>%
+el1.5_long <- el1.5 %>%
   pivot_longer(
     cols = matches("^phi"),
     names_to = "phi_type",

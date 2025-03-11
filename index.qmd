@@ -408,7 +408,7 @@ cor_mardia <- function(theta, x) {
   )
   
   # Final D value (rank correlation, values between 0 and 1)
-  D <- a * (T_c^2 + T_s^2)
+  D <- (a * (T_c^2 + T_s^2)) %>% sqrt()
   
   # Calculate U_n and p-value
   U_n <- 24 * (T_c^2 + T_s^2) / (n^2 * (n + 1))
@@ -505,36 +505,38 @@ cors_lin_angle <- d_draws %>%
 
 beepr::beep(7)
 
-cors_lin_lin <-  d_draws %>%
-  group_by(iteration) %>%
-  summarise(
-    pair_data = list(
-      c("mesor", "amp", "logsigma", "sigma", "sigma2", "bl_pa", "bl_na") %>% 
-        combn(2) %>%
-        t() %>%
-        as.data.frame() %>%
-        rename(par1 = V1, par2 = V2) %>% 
-        tibble()
-    )
-  ) %>%
-  unnest(pair_data) %>%
-  mutate(
-    x = map(par1, ~ pull(filter(d_draws, iteration == cur_group_id()), all_of(.))),
-    y = map(par2, ~ pull(filter(d_draws, iteration == cur_group_id()), all_of(.))),
-    pearson_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs")),
-    pearson_pval = map2_dbl(x, y, ~ cor.test(.x, .y)$p.value),
-    spearman_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs", method = "spearman")),
-    spearman_pval = map2_dbl(x, y, ~ cor.test(.x, .y)$p.value, method = "spearman"),
-    kendall_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs", method = "kendall")),
-    kendall_pval = map2_dbl(x, y, ~ cor.test(.x, .y)$p.value, method = "kendall")
-  ) %>%
-  select(-x, -y) %>%
-  unnest(cols = last_col()) %>%
-  pivot_longer(-1:-3,
-               names_to = "cortypeXmeasure",
-               values_to = "value")
+cors_lin_lin <- d_draws %>%
+  filter(iteration < 501) %>% 
+  mutate(iteration = paste(item, iteration)) %>% 
+    group_by(iteration) %>%
+    summarise(
+        pair_data = list(
+            c("mesor", "amp", "logsigma", "sigma", "sigma2") %>% 
+                combn(2) %>%
+                t() %>%
+                as.data.frame() %>%
+                rename(par1 = V1, par2 = V2) %>% 
+                tibble()
+        )
+    ) %>%
+    unnest(pair_data) %>%
+    mutate(
+        x = map2(par1, iteration, ~ pull(filter(d_draws, iteration == .y), all_of(.x))),
+        y = map2(par2, iteration, ~ pull(filter(d_draws, iteration == .y), all_of(.x))),
+        pearson_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs")),
+        pearson_pval = map2_dbl(x, y, ~ cor.test(.x, .y)$p.value),
+        spearman_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs", method = "spearman")),
+        spearman_pval = map2_dbl(x, y, ~ cor.test(.x, .y, method = "spearman")$p.value),
+        kendall_cor = map2_dbl(x, y, ~ cor(.x, .y, use = "complete.obs", method = "kendall")),
+        kendall_pval = map2_dbl(x, y, ~ cor.test(.x, .y, method = "kendall")$p.value)
+    ) %>%
+    select(-x, -y) %>%
+    unnest(cols = last_col()) %>%
+    pivot_longer(-1:-3,
+                 names_to = "cortypeXmeasure",
+                 values_to = "value")
 
-ests_level2 <- cors_lin_angle %>%
+ests_level2 <- #cors_lin_angle %>%
   rbind(cors_lin_lin) %>%
   group_by(cortypeXmeasure) %>%
   mutate(
@@ -549,14 +551,14 @@ ests_level2 <- cors_lin_angle %>%
 
 beepr::beep(9)
 
-ests_level2 %>%
-  cbind(item = item_, .) %>% 
-saveRDS(here("fits",
-             paste0("ests_level2_",
-                    item_,
-                    "_random_var.rds")
-             )
-        )
+# ests_level2 %>%
+#   cbind(item = item_, .) %>% 
+# saveRDS(here("fits",
+#              paste0("ests_level2_lin_",
+#                     item_,
+#                     "_random_var.rds")
+#              )
+#         )
 
 ```
 
@@ -582,7 +584,7 @@ el1 <- e_level1 <-
                  "ests_level1_fitbit_random_var.rds"))
     )
 
-el1.5e_level1.5 <- 
+el1.5 <- e_level1.5 <- 
   rbind(
     readRDS(here("fits",
                  "ests_level1.5_pa_random_var.rds")),
@@ -638,8 +640,7 @@ f_plot_hdr <- function(df,
   # Compute median coordinates and distance from origin
   median_co <- median(df[[x_col]], na.rm = TRUE)
   median_si <- median(df[[y_col]], na.rm = TRUE)
-  distance_from_origin <- sqrt(median_co^2 + median_si^2)
-  
+
   # Define color palette
   viridis_colors <- viridis(256, direction = -1)
   viridis_colors[1] <- "#FFFFFF"  # Make the lowest density white
@@ -665,11 +666,11 @@ f_plot_hdr <- function(df,
     # Add contour lines at specified HDR levels
     geom_contour(
       aes(z = cumulative_prob),
-      breaks = c(95, 90, 85, 80),
-      color = "white",
+      breaks = 95, #c(95, 90, 85, 80),
+      color = "gray30",
       size = 0.7
     ) +
-    # Add custom axes at the center
+    # Add axes at the center
     geom_hline(yintercept = 0,
                color = "black",
                alpha = 0.6,
@@ -678,25 +679,7 @@ f_plot_hdr <- function(df,
                color = "black",
                alpha = 0.6,
                size = 0.4) +  # Y-axis
-    # Add line segments for median projections
-    annotate(
-      "segment",
-      x = median_co,
-      xend = median_co,
-      y = 0,
-      yend = median_si,
-      color = "blue",
-      linetype = "dashed"
-    ) +  # Vertical projection
-    annotate(
-      "segment",
-      x = 0,
-      xend = median_co,
-      y = median_si,
-      yend = median_si,
-      color = "blue",
-      linetype = "dashed"
-    ) +  # Horizontal projection
+    # Add line from origin to median
     annotate(
       "segment",
       x = 0,
@@ -705,7 +688,7 @@ f_plot_hdr <- function(df,
       yend = median_si,
       color = "red",
       size = 0.7
-    ) +  # Line from origin to median
+    ) +
     # Ensure square aspect ratio
     coord_fixed(ratio = 1,
                 xlim = xlim,
@@ -897,7 +880,10 @@ We first make a function to make the plots:
 
 ```{r}
 
-f_plot_circular_linear <- function(phi, title = "Circular and linear histograms") {
+f_plot_circular_linear <- function(phi,
+                                   title = "Circular and linear histograms",
+                                   only_circle = FALSE,
+                                   only_hist = FALSE) {
   # Set up bins: one per minute in 24 hours (1440 bins)
   bins <- 24 * 60
   arc <- 2 * pi / bins
@@ -929,16 +915,25 @@ f_plot_circular_linear <- function(phi, title = "Circular and linear histograms"
     mutate(ci_2.5 = if_else(ci_2.5 > ci_97.5, ci_2.5 - 2 * pi, ci_2.5))
   
   d_estimates <- d_summary %>%
-    pivot_longer(cols = c(mean, median), names_to = "measure", values_to = "value") %>%
-    mutate(x = cos(value) * 1.4, y = sin(value) * 1.4)
+    pivot_longer(cols = c(mean, median),
+                 names_to = "measure",
+                 values_to = "value") %>%
+    mutate(x = cos(value) * 1.4,
+           y = sin(value) * 1.4)
   
   # Circular plot
   p_circle <- ggplot() +
     # Cross lines
-    geom_vline(xintercept = 0, linewidth = 0.3, color = "gray60") +
-    geom_hline(yintercept = 0, linewidth = 0.3, color = "gray60") +
+    geom_vline(xintercept = 0,
+               linewidth = 0.3,
+               color = "gray60") +
+    geom_hline(yintercept = 0,
+               linewidth = 0.3,
+               color = "gray60") +
     # Outer circle
-    geom_circle(aes(x0 = 0, y0 = 0, r = 1), color = "gray70", inherit.aes = FALSE) +
+    geom_circle(aes(x0 = 0, y0 = 0, r = 1),
+                color = "gray70",
+                inherit.aes = FALSE) +
     # Background points
     geom_point(data = d, aes(x = x, y = y), size = 0.2, color = "azure4") +
     # Confidence bands as slices
@@ -955,15 +950,28 @@ f_plot_circular_linear <- function(phi, title = "Circular and linear histograms"
     ) +
     # Rays for mean/median
     geom_segment(
-      data = d_summary %>% pivot_longer(cols = c(mean, median), names_to = "measure", values_to = "value"),
-      aes(x = 0, y = 0, xend = cos(value) * r, yend = sin(value) * r,
-          color = type, linetype = measure),
+      data = d_summary %>%
+        pivot_longer(cols = c(mean, median),
+                    names_to = "measure",
+                    values_to = "value"),
+      aes(x = 0,
+          y = 0,
+          xend = cos(value) * r,
+          yend = sin(value) * r,
+          color = type,
+          linetype = measure),
       linewidth = 1.2, alpha = 0.7
     ) +
     # Asterisk markers
     geom_point(
-      data = d_summary %>% pivot_longer(cols = c(mean, median), names_to = "measure", values_to = "value"),
-      aes(x = cos(value) * r, y = sin(value) * r, shape = measure, color = type),
+      data = d_summary %>%
+        pivot_longer(cols = c(mean, median),
+                     names_to = "measure",
+                     values_to = "value"),
+      aes(x = cos(value) * r,
+          y = sin(value) * r,
+          shape = measure,
+          color = type),
       size = 3, stroke = 1
     ) +
     # Scales for fill, color, shape, and linetype
@@ -987,6 +995,7 @@ f_plot_circular_linear <- function(phi, title = "Circular and linear histograms"
       values = c("mean" = "solid", "median" = "dashed"),
       name   = "Measure", labels = c("Mean", "Median")
     ) +
+    guides(color = "none") +
     coord_fixed(xlim = c(-1.1, 1.1), ylim = c(-1.1, 1.1)) +
     theme_minimal() +
     theme(
@@ -998,9 +1007,15 @@ f_plot_circular_linear <- function(phi, title = "Circular and linear histograms"
     ) +
     ggtitle(title)
   
+  if(only_circle == TRUE)
+    return(p_circle + theme(legend.position = "right"))
+  
   # Histogram plot
   p_hist <- ggplot(data.frame(x = phi), aes(x = x)) +
-    geom_histogram(aes(y = ..ncount..), bins = 120, alpha = 0.6, fill = "azure4") +
+    geom_histogram(aes(y = ..ncount..),
+                   bins = 120,
+                   alpha = 0.6,
+                   fill = "azure4") +
     geom_segment(
       data = d_estimates,
       aes(x = value, xend = value, y = 0, yend = r^3 * 0.4,
@@ -1032,10 +1047,18 @@ f_plot_circular_linear <- function(phi, title = "Circular and linear histograms"
         rename(ci_2.5 = new_ci_2.5, ci_97.5 = new_ci_97.5) %>%
         select(type, ci_2.5, ci_97.5, r) %>%
         distinct(),
-      aes(xmin = ci_2.5, xmax = ci_97.5, ymin = 0, ymax = r^3 * 0.4, fill = type),
+      aes(xmin = ci_2.5,
+          xmax = ci_97.5,
+          ymin = 0,
+          ymax = r^3 * 0.4,
+          fill = type),
       alpha = 0.6, inherit.aes = FALSE
     ) +
     theme_minimal() +
+  scale_x_continuous(
+    breaks = c(0, pi/2, pi, 3*pi/2, 2*pi),
+    labels = c("0", expression(pi/2), expression(pi), expression(3*pi/2), expression(2*pi))
+  ) +
     theme(
       panel.grid    = element_blank(),
       axis.text.y   = element_blank(),
@@ -1066,6 +1089,8 @@ f_plot_circular_linear <- function(phi, title = "Circular and linear histograms"
       name   = "Measure", labels = c("Mean", "Median")
     ) +
     expand_limits(x = c(0, 2 * pi))
+  
+  if(only_hist == TRUE) return(p_hi)
   
   # Combine the circular and histogram plots using patchwork
   wrap_plots(p_circle, plot_spacer(), p_hist, ncol = 1, heights = c(1, 0.1, 0.5))
@@ -1190,7 +1215,7 @@ el1_long %>%
     legend.key.height = unit(.5, "cm")
   )
 
-ggsave("distribution-l1-estimates.pdf",
+ggsave("distribution-l1-phi.pdf",
        width = 25,
        height = 12.5,
        units = "cm")
@@ -1202,12 +1227,12 @@ ggsave("distribution-l1-estimates.pdf",
 
 ```{r}
 
-p_hdr_pa <- el1.5e_level1.5 %>% 
+p_hdr_pa <- e_level1.5 %>% 
     filter(item == "pa") %>% 
     f_plot_hdr("co_median", "si_median",
                title = "Dataset 1")
 
-p_hdr_fitbit <- el1.5e_level1.5 %>% 
+p_hdr_fitbit <- e_level1.5 %>% 
     filter(item == "fitbit") %>% 
     f_plot_hdr("co_median", "si_median",
                title = "Dataset 2")
@@ -1226,6 +1251,74 @@ ggsave("joint-posterior-hdr-level2.pdf",
 
 ```
 
+### Phase fixed effects
+
+Making the plots:
+
+```{r}
+p_pa_lin <- el1.5 %>%
+  filter(item == "pa") %>%
+  pull(phi_median) %>%
+  f_plot_circular_linear(only_circle = TRUE) +
+  ggtitle("Dataset 1", "Based on linear medians")
+
+p_pa_circ <- el1.5 %>%
+  filter(item == "pa") %>%
+  pull(phi_circ_median) %>%
+  f_plot_circular_linear(only_circle = TRUE) +
+  ggtitle("", "Based on circular medians")
+
+
+p_fitbit_lin <- el1.5 %>%
+  filter(item == "fitbit") %>%
+  pull(phi_median)
+  f_plot_circular_linear(only_circle = TRUE) +
+  ggtitle("Dataset 2", "Based on linear medians")
+
+p_fitbit_circ <- el1.5 %>%
+  filter(item == "fitbit") %>%
+  pull(phi_circ_median) %>% 
+  f_plot_circular_linear(only_circle = TRUE) +
+  ggtitle("", "Based on circular medians")
+
+
+p_lin <- (p_pa_lin | plot_spacer() | p_fitbit_lin) +
+  plot_layout(widths = c(1, 0.1, 1))
+p_circ <- (p_pa_circ | plot_spacer() | p_fitbit_circ) +
+  plot_layout(widths = c(1, 0.1, 1))
+
+(p_lin/ p_circ) + plot_layout(guides = "collect")
+
+ggsave("distribution-l2-phi.pdf",
+       width = 20,
+       height = 15,
+       units = "cm")
+
+```
+
+Getting the point estimates and 95%CI width of the fixed effects:
+
+```{r}
+el1.5 %>%
+  select(item, phi_median, phi_circ_median) %>% 
+  pivot_longer(phi_median:phi_circ_median,
+               names_to = "median_method",
+               values_to = "phi") %>% 
+  mutate(median_method = ifelse(
+    str_detect(median_method, "_circ"),
+    "With circular approach",
+    "With linear approach")) %>% 
+  group_by(item, median_method) %>%
+  summarise(
+    bind_cols(
+      # Linear calculations
+      compute_linear_stats(cur_data(), "phi"),
+      # Circular calculations
+      compute_circular_stats(cur_data(), "phi")
+    )
+    )
+```
+
 ### Correlations
 
 ```{r}
@@ -1240,6 +1333,11 @@ el2 %>%
                names_to = "measure",
                values_to = "value") %>%
   mutate(
+    value = case_when(
+      grepl("jwm", correlation_type) & measure == "cor" ~ sqrt(value),
+      grepl("mard", correlation_type) & measure == "cor" ~ sqrt(value),
+      TRUE ~ value
+         ),
     variable = case_when(
       grepl("6", par2) ~ "Starting at 6:00",
       grepl("12", par2) ~ "Starting at 12:00",
@@ -1256,7 +1354,7 @@ el2 %>%
           "Pearson",
           "Spearman",
           "Kendall",
-          "Johnson–Wehrly–Mardia",
+          "Johnson-Wehrly-Mardia",
           "Mardia"
         )
       )
@@ -1268,17 +1366,13 @@ el2 %>%
     par1 %in% c("amp", "mesor", "logsigma")
   ) %>%
   mutate(mm = median (value),
-         value = case_when(
-           correlation_type == "Johnson–Wehrly–Mardia" ~ sqrt(value),
-           TRUE ~ value
-         ),
          item = case_when(item == "pa" ~ "Dataset 1",
                           TRUE ~ "Dataset 2"),
          par1 = case_when(par1 == "amp" ~ "Amplitude",
                           par1 == "mesor" ~ "MESOR",
                           par1 == "logsigma" ~ "log(SD)",
                           TRUE ~ par1) %>% 
-           factor(levels = c("Amplitude", "MESOR", "log(SD)"))) %>%
+           factor(levels = c("MESOR", "Amplitude", "log(SD)"))) %>%
   mutate(measure = "") %>%
   ggplot(aes(x = value, fill = correlation_type)) +
   geom_vline(xintercept = 0.00, linetype = "dashed") +
@@ -1290,10 +1384,10 @@ el2 %>%
     position = "identity"
   ) +
   facet_nested(variable ~ item + par1, scales = "free_y", solo_line = TRUE) +
-  geom_vline(aes(xintercept = mm,
-                 color = correlation_type),
-             linewidth = 0.5,
-             show.legend = FALSE) +
+  # geom_vline(aes(xintercept = mm,
+  #                color = correlation_type),
+  #            linewidth = 0.5,
+  #            show.legend = FALSE) +
   labs(x = "Value", y = "Frequency") +
   scale_fill_manual(
     values = c("#9C179EFF",
