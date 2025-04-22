@@ -1334,7 +1334,7 @@ To make the plots demonstrating correlations using simulated data, we first make
 f_plot_correlation_demonstration <- function(ed,
                                              main_title = "",
                                              # subtitle = "",
-                                             only_scatter_plot = TRUE,
+                                             only_scatter_plot = FALSE,
                                              only_mardia_plot = FALSE,
                                              point_size = 1){
 
@@ -1405,46 +1405,9 @@ p_main <- ggplot(ed, aes(x = phi, y = z)) +
   theme_few() +
   theme(plot.title = element_text(size = 16))
 
-# Linear fit curve
-phi_grid <- seq(0, 2 * pi, length.out = 200)
-z_lin    <- predict(fit_lin, newdata = data.frame(phi = phi_grid))
-df_lin   <- data.frame(x_eff = z_lin * cos(phi_grid),
-                       y_eff = z_lin * sin(phi_grid))
 
-# Cosinor fit curve
-z_cos   <- predict(fit_cos, newdata = data.frame(phi = phi_grid))
-df_cos  <- data.frame(x_eff = z_cos * cos(phi_grid),
-                      y_eff = z_cos * sin(phi_grid))
-
-p_polar <- ggplot(df_cart, aes(x = x_eff, y = y_eff)) +
-  geom_hline(yintercept = 0,
-             color = "gray") +
-  geom_vline(xintercept = 0,
-             color = "gray") +
-  geom_point(size = point_size, color = "azure4") +
-  geom_path(
-    data = df_lin,
-    aes(x_eff, y_eff),
-    color = "#9C179EFF",
-    size = 1
-  ) +
-  geom_path(
-    data = df_cos,
-    aes(x_eff, y_eff),
-    color = "#54C568FF",
-    size = 1
-  ) +
-coord_fixed(1,
-            xlim = c(-lim_polar, lim_polar),
-            ylim = c(-lim_polar, lim_polar)) +
-  theme_minimal() +
-  theme(
-    legend.position = "none",
-    panel.grid      = element_blank(),
-    axis.text       = element_blank(),
-    axis.ticks      = element_blank(),
-    axis.title      = element_blank()
-  )
+if(only_scatter_plot == TRUE)
+  return(p_main)
 
 # -------------- Mardia Plot --------------
 
@@ -1525,13 +1488,16 @@ p_mardia <- ggplot() +
     axis.title      = element_blank()
   )
 
+if(only_mardia_plot == TRUE)
+  return(p_mardia + ggtitle(main_title))
+
 p_main + p_mardia +
   plot_layout(widths = c(2, 1))
 
 }
 ```
 
-And we simulate data and generate the plots:
+We then simulate data for demonstration:
 
 ```{r}
 
@@ -1544,43 +1510,93 @@ data.frame(phi = (phi_sim + 1.04*pi) %% (2*pi),
              1*rn) %>%
   f_plot_correlation_demonstration()
 
+df_1 <- data.frame(phi = (phi_sim + 0.54*pi) %% (2*pi),
+             z = cos(phi_sim + pi/3*cos(phi_sim)) +  0.1*rn)
+df_2 <- data.frame(phi = (phi_sim + 0.04*pi) %% (2*pi),
+             z = cos(phi_sim + pi/3*cos(phi_sim)) +  0.1*rn)
+df_3 <- data.frame(phi = (phi_sim + 1.04*pi) %% (2*pi),
+             z = cos(phi_sim + pi/3*cos(phi_sim)) +  0.1*rn)
 
-p_1 <- f_plot_correlation_demonstration(
-  data.frame(phi = (phi_sim + 0.54*pi) %% (2*pi),
-             z = cos(phi_sim + pi/3*cos(phi_sim)) +  0.1*rn),
-  "Raw simulated data")
+df_1_noisy <- data.frame(phi = (phi_sim + 0.54*pi) %% (2*pi),
+             z = cos(phi_sim + pi/3*cos(phi_sim)) +  1*rn)
+df_2_noisy <- data.frame(phi = (phi_sim + 0.04*pi) %% (2*pi),
+             z = cos(phi_sim + pi/3*cos(phi_sim)) +  1*rn)
+df_3_noisy <- data.frame(phi = (phi_sim + 1.04*pi) %% (2*pi),
+             z = cos(phi_sim + pi/3*cos(phi_sim)) +  1*rn)
 
-p_2 <- f_plot_correlation_demonstration(
-  data.frame(phi = (phi_sim + 1.04*pi) %% (2*pi),
-             z = cos(phi_sim + pi/3*cos(phi_sim)) +  0.1*rn),
-  expression(phi ~ "shifted by" ~ +pi/2))
+```
 
-p_3 <- f_plot_correlation_demonstration(
-  data.frame(phi = (phi_sim + 0.04*pi) %% (2*pi),
-             z = cos(phi_sim + pi/3*cos(phi_sim)) +  0.1*rn),
-  expression(phi ~ "shifted by" ~ -pi/2))
+And make the scatter plots:
 
-p_4 <- f_plot_correlation_demonstration(
-  data.frame(phi = (phi_sim + 0.54*pi) %% (2*pi),
-             z = cos(phi_sim + pi/3*cos(phi_sim)) +  1*rn),
-  "More noise added Z")
+```{r}
 
-p_5 <- f_plot_correlation_demonstration(
-  data.frame(phi = (phi_sim + 1.04*pi) %% (2*pi),
-             z = cos(phi_sim + pi/3*cos(phi_sim)) +  1*rn),
-  expression("More noise added to Z," ~ phi ~ "shifted by" ~ +pi/2))
+p_left <-
+  f_plot_correlation_demonstration(df_1,
+                                   "Raw simulated data",
+                                   only_scatter_plot = TRUE) /
+  f_plot_correlation_demonstration(df_2,
+                                   expression(phi ~ "shifted by" ~ -pi/2),
+                                   only_scatter_plot = TRUE) /
+  f_plot_correlation_demonstration(df_3,
+                                   expression(phi ~ "shifted by" ~ +pi/2),
+                                   only_scatter_plot = TRUE)
+
+p_right <-
+  f_plot_correlation_demonstration(
+    df_1_noisy,
+    "Increased noise in Z",
+    only_scatter_plot = TRUE) /
+  f_plot_correlation_demonstration(
+    df_2_noisy,
+    expression("Increased noise in Z," ~ phi ~ "shifted by" ~ -pi/2),
+    only_scatter_plot = TRUE) /
+  f_plot_correlation_demonstration(
+    df_3_noisy,
+    expression("Increased noise in Z," ~ phi ~ "shifted by" ~ +pi/2),
+    only_scatter_plot = TRUE)
 
 
-(p_1 / plot_spacer() /
-    p_2 / plot_spacer() /
-    p_3 / plot_spacer() /
-    p_4 / plot_spacer() /
-    p_5 ) +
-  plot_layout(heights = c(1, .05, 1, .05, 1, .05, 1, .05, 1))
+ggsave("demonstration-correlation-comparison-scatter.pdf",
+       p_left | p_right,
+       height = 30,
+       width = 45,
+       units = "cm")
+```
 
-ggsave("demonstration-correlation-comparison.pdf",
-       width = 25,
-       height = 50,
+And the Mardia polar rank plots:
+
+```{r}
+
+p_left <-
+  f_plot_correlation_demonstration(df_1,
+                                   "Raw simulated data",
+                                   only_mardia_plot = TRUE) /
+  f_plot_correlation_demonstration(df_2,
+                                   expression(phi ~ "shifted by" ~ -pi/2),
+                                   only_mardia_plot = TRUE) /
+  f_plot_correlation_demonstration(df_3,
+                                   expression(phi ~ "shifted by" ~ +pi/2),
+                                   only_mardia_plot = TRUE)
+
+p_right <-
+  f_plot_correlation_demonstration(
+    df_1_noisy,
+    "Increased noise in Z",
+    only_mardia_plot = TRUE) /
+  f_plot_correlation_demonstration(
+    df_2_noisy,
+    expression("Increased noise in Z," ~ phi ~ "shifted by" ~ -pi/2),
+    only_mardia_plot = TRUE) /
+  f_plot_correlation_demonstration(
+    df_3_noisy,
+    expression("Increased noise in Z," ~ phi ~ "shifted by" ~ +pi/2),
+    only_mardia_plot = TRUE)
+
+
+ggsave("demonstration-correlation-comparison-mardia.pdf",
+       (p_left | plot_spacer() | p_right) + plot_layout(widths = c(1, 0.25, 1)),
+       height = 25,
+       width = 37.5,
        units = "cm")
 ```
 
