@@ -324,6 +324,8 @@ compute_circular_stats <- function(data, variable) {
   tibble(
     circ_mean = (mean.circular(data[[variable]]) %% (2 * pi)) %>% as.numeric(),
     circ_median = (median.circular(data[[variable]]) %% (2 * pi)) %>% as.numeric(),
+    circ_ci_2.5 = (ci_2.5 %% (2 * pi)) %>% as.numeric(),
+    circ_ci_97.5 = (ci_97.5 %% (2 * pi)) %>% as.numeric(),
     circ_ci_width = (
       (ci_97.5 - ci_2.5) %% (2 * pi)
     ) %>% as.numeric()
@@ -874,6 +876,89 @@ ggsave("l1-amp-hist-with-hdr.pdf",
        units = "cm")
 ```
 
+For the figure in the conclusion subsection of level-1 estimation, we make a scatter plot of HRD levels based on 95%CI width:
+
+```{r}
+
+
+p_hist <- ggplot(el1_tmp, aes(x = phi_circ_ci_width*12/pi)) +
+  geom_histogram(alpha = 0.6,
+                 bins = 40,
+                 fill = "orangered") +
+  theme_minimal() +
+  labs(x = "", y = "") +
+  scale_x_continuous(expand = c(0, 0),
+                     limits = c(0, 24),
+                     breaks = (0:4) * 6) +
+  facet_wrap( ~ item,
+              nrow = 1,
+              scales = "free",
+              strip.position = "top") +
+  # Add line under dataset name in the facet title
+  annotate("segment",
+           x = Inf,
+           xend = -Inf,
+           y = Inf,
+           yend = Inf,
+           color = "black",
+           lwd = 0.75) +
+  theme(panel.spacing = unit(3, "lines"),
+        strip.text = element_text(size = 12),
+        legend.position = "none",
+        axis.text = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.background = element_blank(),
+        plot.margin = margin(0,0,0,0)) 
+
+# Main scatter plot with facet wrap by item and adjusted spacing
+p_scatter <- ggplot(el1_tmp, aes(x = phi_circ_ci_width*12/pi,
+                     y = amp_hdr,
+                     color = interval)) +
+  geom_hline(
+    yintercept = c(95, 90, 85, 80),
+    linetype = "dotted",
+    color = "red"
+  ) +
+  geom_point(alpha = 0.4) +
+  scale_color_viridis_d(begin = 0.3, end = 0.95, option = "plasma") +
+  scale_fill_viridis_d(begin = 0.3, end = 0.95, option = "plasma") +
+  theme_minimal() +
+  labs(x = "95%CI width of person-specific peak offset", y = TeX("$\\alpha$%HDR")) +
+  geom_label(
+    data = interval_counts,
+    aes(
+      x = 24,
+      y = y_position,
+      label = paste0(percent, "%"),
+      fill = interval
+    ),
+    alpha = 0.6,
+    color = "black",
+    hjust = 1.1,
+    size = 3
+    # label.size = 0  # Removes border for better readability
+  ) +
+  scale_x_continuous(expand = c(0, 0),
+                     limits = c(0, 24),
+                     breaks = (0:4) * 6) +
+  scale_y_continuous(breaks = seq(0, 100, 25) %>% c(80, 85, 90, 95)) +
+  facet_wrap( ~ item,
+              nrow = 1,
+              scales = "free_x",
+              strip.position = "top") +
+  theme(panel.spacing = unit(3, "lines"),
+        strip.text = element_blank(),#element_text(size = 12),
+        legend.position = "none")
+
+p_hist / p_scatter + patchwork::plot_layout(heights = c(0.5,2))
+
+ggsave("l1-ciwidth-hist-with-hdr.pdf",
+       width = 20,
+       height = 15,
+       units = "cm")
+```
+
 ### Circular and linear histograms and estimates
 
 We first make a function to make the plots:
@@ -1222,6 +1307,161 @@ el1_long %>%
 ggsave("distribution-l1-phi.pdf",
        width = 25,
        height = 12.5,
+       units = "cm")
+```
+
+### Peak offset estimates on 24-hour clock
+
+We can also plot the point estimates and the associated 95%CI of individual peak offset $\psi_i$ over a 24-hour clock with the following code (which is not very succinct):
+
+```{r}
+
+# Function to convert radians to hours (0-24)
+rad_to_hours <- function(rad) {
+  ((rad * 24) / (2 * pi)) %% 24
+}
+
+# Function to handle circular confidence intervals
+circular_ci_to_hours <- function(lower, upper) {
+  lower_hours <- rad_to_hours(lower)
+  upper_hours <- rad_to_hours(upper)
+  
+  # Handle cases where CI crosses midnight (0/24 hours)
+  if (lower_hours > upper_hours) {
+    # CI crosses midnight, need to adjust
+    list(lower = lower_hours,
+         upper = upper_hours,
+         crosses_midnight = TRUE)
+  } else {
+    list(lower = lower_hours,
+         upper = upper_hours,
+         crosses_midnight = FALSE)
+  }
+}
+
+# Prepare the data
+plot_data <- ests_level1_ci_bounds %>%
+  mutate(
+    phi_hours = rad_to_hours(phi_circ_mean),
+    phi_median_hours = rad_to_hours(phi_circ_median),
+    ci_lower_hours = rad_to_hours(phi_circ_ci_2.5),
+    ci_upper_hours = rad_to_hours(phi_circ_ci_97.5)
+  ) %>%
+  # Scale amplitude for radius separately for each dataset
+  group_by(item) %>%
+  mutate(radius = amp_median / max(amp_median, na.rm = TRUE) * 0.8) %>%
+  ungroup()
+
+# Alternative version with better handling of circular CIs that cross midnight
+# This creates separate segments for CIs that wrap around midnight
+plot_data_expanded <- plot_data %>%
+  rowwise() %>%
+  mutate(crosses_midnight = ci_lower_hours > ci_upper_hours) %>%
+  ungroup()
+
+# Create segments for CIs that don't cross midnight
+normal_segments <- plot_data_expanded %>%
+  filter(!crosses_midnight) %>%
+  mutate(x_start = ci_lower_hours, x_end = ci_upper_hours)
+
+# Create segments for CIs that cross midnight (split into two segments)
+midnight_segments <- plot_data_expanded %>%
+  filter(crosses_midnight) %>%
+  {
+    rbind(
+      mutate(
+        .,
+        x_start = ci_lower_hours,
+        x_end = 24,
+        segment_part = "first"
+      ),
+      mutate(
+        .,
+        x_start = 0,
+        x_end = ci_upper_hours,
+        segment_part = "second"
+      )
+    )
+  }
+
+# Combine all segments
+all_segments <- rbind(mutate(normal_segments, segment_part = "normal"),
+                      midnight_segments)
+
+# Enhanced plot with proper circular CI handling
+p_enhanced <- ggplot(plot_data, aes(x = phi_hours, y = radius)) +
+  # Add hour markers (clock face)
+  geom_vline(
+    xintercept = seq(0, 23, 1),
+    color = "grey90",
+    size = 0.3
+  ) +
+  geom_vline(
+    xintercept = c(0, 6, 12, 18),
+    color = "grey70",
+    size = 0.5
+  ) +
+  
+  # Add confidence interval arcs (with proper midnight handling)
+  geom_segment(
+    data = all_segments,
+    aes(
+      x = x_start,
+      xend = x_end,
+      y = radius,
+      yend = radius,
+      color = amp_hdr
+    ),
+    size = .5,
+    alpha = 0.5
+  ) +
+  
+  # Add point estimates
+  geom_point(aes(x = phi_hours, y = radius, color = amp_hdr),
+             size = .75,
+             alpha = 0.8) +
+  
+  # Set up polar coordinates for clock appearance
+  coord_polar(theta = "x",
+              start = 0,
+              direction = 1) +
+  
+  # Customize scales
+  scale_x_continuous(
+    limits = c(0, 24),
+    breaks = seq(0, 24, 6),
+    labels = c("0", "6", "12", "18", "24")
+  ) +
+  scale_y_continuous(
+    limits = c(0, 1),
+    breaks = seq(0.2, 1, 0.2),
+    labels = function(x)
+      round((x - 0.2) / 0.8 * max(plot_data$amp_median, na.rm = TRUE))
+  ) +
+  
+  # Color scale for amplitude HDR
+  scale_color_viridis_c(begin = 0.3, end = 0.95, option = "plasma") +
+  
+  # Facet by item
+  facet_wrap( ~ item, ncol = 2) +
+
+  # Theming
+  theme_minimal() +
+  theme(
+    axis.title = element_blank(),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 10, face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(size = 12, face = "bold"),
+    legend.position = "none"
+  )
+
+print(p_enhanced)
+
+ggsave("l1-polar-amp-ci-hdr.pdf",
+       width = 20,
+       height = 10,
        units = "cm")
 ```
 

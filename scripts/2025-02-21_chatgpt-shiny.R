@@ -77,7 +77,7 @@ ui <- fluidPage(
            textAreaInput("dplyrCode", "dplyr pipeline (including dataframe name and pipeline)",
                          placeholder = "e.g. dfName %>% filter(x > 0) %>% mutate(z = x * 2)",
                          rows = 3, width = "90%")
-    ),˜
+    ),
     column(width = 12,
            actionButton("loadDF", "Load DF from Workspace")
     )

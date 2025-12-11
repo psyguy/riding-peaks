@@ -1,0 +1,13 @@
+name: scripts
+title: scripts
+username: utrecht-university
+account: utrecht-university
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 15078313
+bundleId: 10618911
+url: https://utrecht-university.shinyapps.io/scripts/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: 2024-11-07_try-brms.R|2024-11-09_stan-brms.stan|2024-11-12_try-brms.R|2024-11-13_plot-cors.R|2024-11-13_try-brms-mac.R|2024-11-13_try-brms.R|2024-12-11_brms-random-residual.R|2024-12-12_plots.R|2024-12-16_correlation.R|2024-12-19_plot-circles.R|2024-12-19_plot-cylinder.R|2024-12-20_hdr-chatgpt.R|2025-01-06_fitbit-data-cleaning.R|2025-01-08_person-specific-histograms.R|2025-01-09_leuven-data-cleaning.R|2025-01-11_amplitude-quantile.R|2025-01-11_plots.R|2025-02-04_correct-draws.R|2025-02-04_plots.R|2025-02-14_plot-circular-linear.R|2025-02-16_plot-l1.5-stats.R|2025-02-19_visualize-mardia.R|2025-02-20_chatgpt-shiny.R|2025-02-21_chatgpt-shiny.R|2025-02-21_plot-correlation-demonstration.R|2025-02-27_chatgpt-shiny.R|2025-03-03_plot-fixed-effects.R|2025-03-11_idk-2.R|2025-03-11_idk-3.R|2025-03-11_idk-4.R|2025-03-11_idk.R|2025-03-11_meh.R|2025-03-11_some-colors.R|2025-04-04_plot-correlation-demonstration.R|shiny_circular-correlations.R

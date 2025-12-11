@@ -2,3 +2,6 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# Large split files - reassemble with scripts/reassemble_large_rds.R
+fits/brms_pa_n1_strategy1_fits.rds
